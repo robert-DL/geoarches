@@ -2,7 +2,7 @@
 
 geoarches is a machine learning package for training, running and evaluating ML models on weather and climate data, developped by Guillaume Couairon and Renu Singh in the ARCHES team at INRIA (Paris, France).
 
-It can be used to run the ArchesWeather and ArchesWeatherFlow weather models.
+It can be used to run the ArchesWeather and ArchesWeatherGen weather models.
 
 geoarches is based on pytorch, pytorch-lightning and hydra for configuration. After the package is installed, you can use its modules in python code, but you can also call the main training and evaluating scripts of geoarches. 
 
@@ -42,7 +42,7 @@ ln -s /path/to/wandb/ wandblogs
 ```
 Where `/path/to/models/` is where the trained models are stored, and `/path/to/evaluation/` is a folder used to store intermediate outputs from evaluating models. If you want to store models and data in your working directory, ou can also simply create regular folders.
 
-### Installing ArchesWeather and ArchesWeatherFlow
+### Installing ArchesWeather and ArchesWeatherGen
 
 ```sh
 src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
