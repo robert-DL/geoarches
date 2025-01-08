@@ -42,11 +42,12 @@ ln -s /path/to/wandb/ wandblogs
 ```
 Where `/path/to/models/` is where the trained models are stored, and `/path/to/evaluation/` is a folder used to store intermediate outputs from evaluating models. If you want to store models and data in your working directory, ou can also simply create regular folders.
 
-### Installing ArchesWeather and ArchesWeatherGen
+### Downloading ArchesWeather and ArchesWeatherGen
+Use following the script to download the 4 deterministic models (archesweather-m-...) and generative model (archesweathergen).
 
 ```sh
 src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
-models="archesweather-m-seed0 archesweather-m-seed1 archesweather-m-skip-seed0 archesweather-m-skip-seed1 archesweathergen"
+MODELS="archesweather-m-seed0 archesweather-m-seed1 archesweather-m-skip-seed0 archesweather-m-skip-seed1 archesweathergen"
 for MOD in $MODELS; do
     mkdir -p modelstore/$MOD/checkpoints
     wget -O modelstore/$MOD/checkpoints/checkpoint.ckpt $src/${MOD}_checkpoint.ckpt
@@ -61,7 +62,7 @@ The recommended way to use the package is to depend on the package inside your o
 
 ### Using geoarches modules in python
 
-You can use the geoarches tools directly by importing them from your directory, e.g.
+After installing the geoarches package (see [Installation](#Installation)), you can use the geoarches tools directly by importing them from your directory, e.g.
 
 ```python
 from geoarches.dataloaders.era5 import Era5Forecast
