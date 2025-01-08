@@ -1,23 +1,21 @@
-# script to evaluate a prediction made by two models
-from omegaconf import OmegaConf
-import hydra
-from hydra.utils import instantiate
-from pathlib import Path
-import os
-import torch
-from tqdm import tqdm
-import sys
-import pandas as pd
-import xarray as xr
+"""
+Script to run inferrence made by two or more models and compute average prediction.
+"""
+
 import argparse
-import numpy as np
-from datetime import timedelta
 import shutil
+import sys
+from pathlib import Path
+
+import pandas as pd
+import torch
+import xarray as xr
+from hydra.utils import instantiate
+from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from geoarches.lightning_modules.base_module import load_module, AvgModule
-
+from geoarches.lightning_modules.base_module import AvgModule, load_module
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--force", action="store_true", help="whether to recompute with model")

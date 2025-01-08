@@ -10,7 +10,21 @@ from omegaconf import OmegaConf
 # import ValueError
 
 
-def load_module(path, device="auto", dotlist=[], return_config=True, ckpt_fname=None, **kwargs):
+def load_module(
+    path: str,
+    device: str = "auto",
+    dotlist: list = [],
+    return_config: bool = True,
+    ckpt_fname: str | None = None,
+    **kwargs,
+):
+    """
+    Args:
+        path: Directory holding hydra config `config.yaml` and lightning module checkpoint(s) under `checkpoints/*.chkpt`.
+        dotlist: list of config overrides.
+        return_config: Whether to return cfg along with module, or just the instantiated module.
+        ckpt_fname: Optional. Checkpoint filename under `checkpoints/`, otherwise chooses most recent file.
+    """
     if Path("modelstore").joinpath(path).exists():
         path = Path("modelstore").joinpath(path)
     else:
@@ -38,7 +52,20 @@ class BaseLightningModule(L.LightningModule):
         for k, v in dct.items():
             self.log(mode + k, v, prog_bar=True, sync_dist=True, add_dataloader_idx=True)
 
-    def init_from_ckpt(self, path, ckpt_fname=None, ignore_keys=list(), missing_warning=True):
+    def init_from_ckpt(
+        self,
+        path: str,
+        ckpt_fname: str | None = None,
+        ignore_keys: list = list(),
+        missing_warning: bool = True,
+    ):
+        """
+        Args:
+            path: Directory holding lightning module checkpoint(s) under `checkpoints/*.chkpt`.
+            ckpt_fname: Optional. Checkpoint filename under `checkpoints/`, otherwise chooses most recent file.
+            ignore_keys: List of prefixes to ignore in keys in the checkpoint state_dict.
+            missing_warning: Whether to warn if there keys in the lightning module that are missing from the checkpoint.
+        """
         if Path(path).is_dir():
             path = Path(path) / "checkpoints"
             paths = list(Path(path).glob("*.ckpt"))
@@ -94,6 +121,10 @@ class BaseLightningModule(L.LightningModule):
 
 
 class AvgModule(L.LightningModule):
+    """
+    Wrapper around several lightning modules to run forward and compute average prediction.
+    """
+
     def __init__(self, module_paths):
         super().__init__()
         self.core = nn.ModuleList([load_module(p, return_config=False) for p in module_paths])

@@ -1,7 +1,7 @@
 """Compute percentiles per latitude/longitude across a given time range.
 
 Computes both high (99.99th, 99.9th and 99th) and low (0.01st, 0.1st and 1st) climatological percentiles.
-Used for
+Used for brier score computation.
 """
 
 import argparse
