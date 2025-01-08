@@ -190,4 +190,12 @@ python -m geoarches.evaluation.plot --output_dir plots/ \ --metric_paths /evalst
 
 ## Contributing to geoarches
 
-If you want to contribute to geoarches, please see the [Contributing](contributing.md) section.
+If you want to contribute to geoarches, please see the [Contributing](CONTRIBUTING.md) section.
+
+## External resources
+
+Many thanks to the authors of WeatherLearn for adapting the Pangu-Weather pseudocode to pytorch. The code for our model is mostly based on their codebase.
+
+[WeatherBench](https://sites.research.google/weatherbench/)
+
+[WeatherLearn](https://github.com/lizhuoq/WeatherLearn/tree/master)
