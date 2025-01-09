@@ -141,7 +141,9 @@ class DiffusionModule(BaseLightningModule):
 
         elif state_normalization == "pred":
             scaler = TensorDict(
-                **torch.load("stats/deltapred24_aws_denorm.pt", weights_only=False)
+                **torch.load(
+                    geoarches_stats_path / "deltapred24_aws_denorm.pt", weights_only=False
+                )
             )
             scaler["level"][-1] *= 3  # we don't care too much about vertical velocity
 
