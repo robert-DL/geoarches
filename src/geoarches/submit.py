@@ -1,4 +1,4 @@
-# submitit file
+# Wrapper around main_hydra.py to launch job on SLURM cluster using submitit.
 import hydra
 import submitit
 from omegaconf import DictConfig, OmegaConf

@@ -28,6 +28,7 @@ Move into this repo and type:
 ```sh
 pip install -e .
 pip install --no-dependencies tensordict
+pip install --no-dependencies dask
 ```
 This also handles installing any dependencies.
 
@@ -55,6 +56,13 @@ for MOD in $MODELS; do
 done
 ```
 You can follow instructions in [`documentation/archesweather-tutorial.ipynb`](documentation/archesweather-tutorial.ipynb) to load the models and run inference with them. See [`documentation/archesweathergen_pipeline.md`](documentation/archesweathergen_pipeline.md) to run training.
+
+### Downloading ERA5 statistics
+To compute brier score on ERA5 (needed to instantiate ArchesWeather models for inferrence or training), you will need to download ERA5 quantiles:
+```sh
+src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
+wget -O src/geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016_2022.nc
+```
 
 ## Running models with geoarches
 
