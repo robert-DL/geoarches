@@ -45,7 +45,7 @@ Now that the residuals are stored, we can run the main flow matching training
 M4ARGS="++dataloader.dataset.pred_path=data/outputs/deterministic/archesweather-m4 \
 ++module.module.load_deterministic_model=[archesweather-m-seed0,archesweather-m-seed1,archesweather-m-seed2,archesweather-m-seed3] "
 
-train module=aw-flow dataloader=era5pred \
+train module=archesweathergen dataloader=era5pred \
 ++limit_val_batches=10 ++max_steps=200000 \
 ++name=archesweathergen-s \
 $M4ARGS \
@@ -57,7 +57,7 @@ $M4ARGS \
 In the paper, we fine-tune the model in 2019, to overcome overfitting of the deterministic model. See the paper for more details.
 
 ```sh
-train module=aw-flow dataloader=era5pred \
+train module=archesweathergen dataloader=era5pred \
 ++limit_val_batches=10 ++max_steps=60000 \
 "++name=archesweathergen-s-ft" \
 $M4ARGS \
