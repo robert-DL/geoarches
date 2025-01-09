@@ -1,5 +1,7 @@
 """
 Script to run inferrence made by two or more models and compute average prediction.
+
+Used to store output of ArchesWeather-Mx4 in order to train ArchesWeatherGen on residuals.
 """
 
 import argparse
@@ -26,7 +28,12 @@ parser.add_argument(
 )
 parser.add_argument("--debug", action="store_true", help="whether to debug")
 parser.add_argument("--max-lead-time", type=int, default=10, help="max lead time")
-parser.add_argument("--uids", default="", type=str, help="model uid")
+parser.add_argument(
+    "--uids",
+    default="",
+    type=str,
+    help="Comma separated list of model uids, names of checkpoint folders stored under `modelstore/` dir.",
+)
 
 
 args = parser.parse_args()

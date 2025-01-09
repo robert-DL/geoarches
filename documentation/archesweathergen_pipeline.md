@@ -19,9 +19,12 @@ for i in {0..3}; do
     train dataloader=era5 module=forecast-geoarchesweather ++name=archesweather-m-seed$i
 done
 ```
+This will start training for 4 deterministic models `ArchesWeather` on ERA5 data.
+The model config will be saved to `modelstore/archesweather-m-seed$i/config.yaml` and the model checkpoints will be saved to `modelstore/archesweather-m-seed$i/checkpoints`.
+
 In the released checkpoints, two models have a skip connection, but that should not really matter.
 
-note that for ArchesWeatherGen, we don't need to do multistep fine-tuning
+note that for ArchesWeatherGen, we don't need to do multistep fine-tuning.
 
 ## Step 2: compute residuals on the ERA5 dataset
 

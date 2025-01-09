@@ -54,7 +54,7 @@ for MOD in $MODELS; do
     wget -O modelstore/$MOD/config.yaml $src/${MOD}_config.yaml 
 done
 ```
-You can follow instructions in `notebooks/archesweather_tutorial.ipynb` to load the models and run inference with them.
+You can follow instructions in [`documentation/archesweather-tutorial.ipynb`](documentation/archesweather-tutorial.ipynb) to load the models and run inference with them. See [`documentation/archesweathergen_pipeline.md`](documentation/archesweathergen_pipeline.md) to run training.
 
 ## Running models with geoarches
 

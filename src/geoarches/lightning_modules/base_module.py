@@ -20,7 +20,7 @@ def load_module(
 ):
     """
     Args:
-        path: Directory holding hydra config `config.yaml` and lightning module checkpoint(s) under `checkpoints/*.chkpt`.
+        path: Path under `modelstore` directory, holding hydra config `config.yaml` and lightning module checkpoint(s) under `checkpoints/*.chkpt`.
         dotlist: list of config overrides.
         return_config: Whether to return cfg along with module, or just the instantiated module.
         ckpt_fname: Optional. Checkpoint filename under `checkpoints/`, otherwise chooses most recent file.
