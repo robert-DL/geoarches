@@ -8,7 +8,6 @@ defaults:
 
 log: False # wandb logging
 
-entity: phaz
 project: ${module.project}
 name: default
 exp_dir: modelstore/${name}

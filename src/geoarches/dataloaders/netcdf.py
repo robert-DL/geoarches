@@ -54,20 +54,23 @@ class NetcdfDataset(torch.utils.data.Dataset):
         # Workaround to avoid calling ds.sel() after ds.transponse() to avoid OOM.
         self.already_ran_index_selection = False
 
+        if not Path(path).exists():
+            raise ValueError("Path does not exist:", path)
+
         if Path(path).is_file() and "." in path.split("/")[-1]:
             print("Single file detected. Loading single file ", path)
             self.files = [path]
         else:
             files = list(Path(path).glob("*"))
             if len(files) == 0:
-                assert ValueError("No files found under path:", path)
+                raise ValueError("No files found under path:", path)
 
             self.files = sorted(
                 [str(x) for x in files if filename_filter(x.name)],
                 key=lambda x: x.replace("6h", "06h").replace("0h", "00h"),
             )
             if len(self.files) == 0:
-                assert ValueError("filename_filter filtered all files.")
+                raise ValueError("filename_filter filtered all files.")
 
         file_extension = Path(self.files[0]).suffix
         engine = engine_mapping[file_extension]

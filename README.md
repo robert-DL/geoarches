@@ -2,13 +2,32 @@
 
 geoarches is a machine learning package for training, running and evaluating ML models on weather and climate data, developped by Guillaume Couairon and Renu Singh in the ARCHES team at INRIA (Paris, France).
 
-It can be used to run the ArchesWeather and ArchesWeatherGen weather models.
+geoarches's building blocks can be easily integrated into research ML pipelines.
+It can also be used to run the ArchesWeather and ArchesWeatherGen weather models.
 
 geoarches is based on pytorch, pytorch-lightning and hydra for configuration. After the package is installed, you can use its modules in python code, but you can also call the main training and evaluating scripts of geoarches. 
 
-
 To develop your own models or make modifications to the existing ones, the intended usage is to write configurations files and pytorch lightning classes in your own working directory. Hydra will then discover your custom ``configs`` folder, and you can point to your custom classes from your custom config files.
 
+## Code Overview
+
+geoarches is meant to jumpstart your ML pipeline with building blocks for data handling, model training, and evaluation. This is an effort to share engineering tools and research knowledge across projects.
+
+Data:
+- `download/`: scripts that parallelize downloads and show how to use chunking to speed up read access.
+- `dataloaders/`: PyTorch datasets that read netcdf data and prepare tensors to feed into model training.
+
+Model training:
+- `backbones/`: network architecture that can be plugged into lightning modules.
+- `lightning_modules/`: wrapper around backbone modules to handle loss computation, optimizer, etc for training and inferrence (agnostic to backbone but specific to ML task).
+
+Evaluation:
+- `metrics/`: tested suite of iterative metrics (memory efficient) for deterministic and generative models.
+- `evaluation/`: scripts for running metrics over model predictions and plotting.
+
+Pipeline:
+- `main_hydra.py`: script to run training or inferrence with hydra configuration.
+- `documentation/`: quickstart code for training and inferrence from a notebook.
 
 ## Installation
 
@@ -36,12 +55,12 @@ This also handles installing any dependencies.
 
 We recommend making the following symlinks in the codebase folder:
 ```sh
-ln -s /path/to/data/ data
-ln -s /path/to/models/ modelstore
-ln -s /path/to/evaluation/ evalstore
-ln -s /path/to/wandb/ wandblogs
+ln -s /path/to/data/ data             # Store data for training and evaluation.
+ln -s /path/to/models/ modelstore     # Store model checkpoints and model hydra configs.
+ln -s /path/to/evaluation/ evalstore  # Store intermediate model outputs for computing metrics.
+ln -s /path/to/wandb/ wandblogs       # Store Wandb logs.
 ```
-Where `/path/to/models/` is where the trained models are stored, and `/path/to/evaluation/` is a folder used to store intermediate outputs from evaluating models. If you want to store models and data in your working directory, ou can also simply create regular folders.
+If you want to store models and data in your working directory, or can also simply create regular folders.
 
 ### Downloading ArchesWeather and ArchesWeatherGen
 Use following the script to download the 4 deterministic models (archesweather-m-...) and generative model (archesweathergen).
@@ -64,11 +83,9 @@ src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
 wget -O src/geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016_2022.nc
 ```
 
-## Running models with geoarches
+## Using geoarches modules in python
 
-The recommended way to use the package is to depend on the package inside your own working directory. Making edits directly in the geoarches package will make updates more difficult, but if you prefer this option, you can create a development branch so as to rebase it on future updates of geoarches.
-
-### Using geoarches modules in python
+The recommended way to use the package is to depend on the package inside your own working directory. Making edits directly in the geoarches package will make updates more difficult, but if you prefer this option, you can create a development branch so as to rebase it on future updates of geoarches. (See [Contributing](CONTRIBUTING.md) section).
 
 After installing the geoarches package (see [Installation](#Installation)), you can use the geoarches tools directly by importing them from your directory, e.g.
 
@@ -79,13 +96,20 @@ ds = Era5Foreacast(path='data/era5_240/full',
                    norm_scheme='pangu')
 ```
 
+## Running models with geoarches
+
+### Using hydra configuration
+
+We use [Hydra](https://hydra.cc/docs/intro/) to easily configure training experiments. `main_hydra.py` is pointed to the `configs/` folder which tells geoarches which dataloader, lightning module, backbone, and their arguments to run. You can also override arguments by CLI (see below for useful arguments). Please read [Hydra](https://hydra.cc/docs/intro/) documentation for more information.
 
 ### Train models with CLI
 
 To train model named `default_run`, you can run
 ```sh
-python -m geoarches.main_hydra module=forecast-geoarchesweather dataloader=era5 \
-++name=default_run
+python -m geoarches.main_hydra \
+module=archesweather \ # Uses module/archesweather.yaml
+dataloader=era5 \ # Uses dataloader/era5.yaml
+++name=default_run \ # Dir to save model checkpoints and name of Wandb run.
 ```
 This will start a training for the deterministic model `ArchesWeather` on ERA5 data.
 
@@ -94,18 +118,33 @@ The model config will be saved to `modelstore/default_run/config.yaml` and the m
 Useful training options are 
 ```sh
 python -m geoarches.main_hydra \
-++log=True \ # log metrics on weights and biases
+++log=True \ # log metrics on weights and biases (See Wandb section below.)
 ++seed=0 \ # set global seed
 ++cluster.gpus=4 \ # number of gpus used for distributed training
 ++batch_size=1 \ # batch size per gpu
 ++max_steps=300000 \ # maximum number of steps for training, but it's good to leave this at 300k for era5 trainings
 ++save_step_frequency=50000 \ # if you need to save checkpoints at a higher frequency
 ```
+#### Run on SLURM
 
 To run on a SLURM cluster, you can create a `configs/cluster` folder inside your working directory and put a ``custom_slurm.yaml`` configuration file in it with custom arguments. Then you call tell geoarches to use this configuration file with
 
 ```sh
 python -m geoarches.submit --config-dir configs cluster=custom_slurm
+```
+
+#### Log experiments to Wandb
+
+Find your API key under User settings in your account (https://docs.wandb.ai/support/find_api_key/) and set the Wandb environment variable in your `~/.bashrc`.
+```
+export WANDB_API_KEY="..."
+```
+
+Then tell geoaches to log to Wandb.
+```sh
+python -m geoarches.main_hydra \
+++log=True \ # log metrics on weights and biases
+++cluster.wandb_mode=offline \ # online allows machine with internet connection to log directly to wandb. Otherwise offline mode logs locally and requires a separate step to sync with wandb.
 ```
 
 ### Evaluate models with CLI

@@ -151,7 +151,6 @@ def main(cfg: DictConfig):
             ckpt_path = ckpts[-1]
 
     if cfg.log:
-        os.environ["WANDB_DISABLE_SERVICE"] = "True"
         print("wandb mode", cfg.cluster.wandb_mode)
         print("wandb service", os.environ.get("WANDB_DISABLE_SERVICE", "variable unset"))
         run_id = cfg.name + "-" + get_random_code() if cfg.cluster.use_custom_requeue else cfg.name
