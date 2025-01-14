@@ -6,7 +6,7 @@ import torch
 import xarray as xr
 from einops import rearrange
 from geoarches.dataloaders import era5
-from geoarches.metrics.label_wrapper import LabelWrapper
+from geoarches.metrics.label_wrapper import LabelDictWrapper, add_timedelta_index
 from torchmetrics import Metric
 
 from .. import stats as geoarches_stats
@@ -193,13 +193,14 @@ class Era5BrierSkillScore(TensorDictMetricBase):
             surface_variables: Names of surface variables (to select quantiles).
             level_variables: Names of level variables (to select quantiles).
             pressure_levels: pressure levels to select from quantiles.
-            lead_time_hours: set to explicitly handle metrics computed on predictions from multistep rollout.
-                Metrics are computed per lead time (aka. prediction_timedelta).
-                FYI when set to None, wrapper with 'dict' output format still handles natively any extra dimensions in targets/preds.
-                However, this option labels each timestep separately in output metric dict.
-                If lead_time_hours set, assumes that metric tensor shapes are (..., multistep, var, lev).
-            rollout_iterations: set to explicitly handle metrics computed on predictions from multistep rollout.
-                Size of timedelta dimension. See param `lead_time_hours`.
+            lead_time_hours: Timedelta between timestamps in multistep rollout.
+                Set to explicitly handle predictions from multistep rollout.
+                This option labels each timestep separately in output metric dict.
+                Assumes that data shape of predictions/targets are [batch, ..., multistep, var, lev, lat, lon].
+                FYI when set to None, Era5BrierSkillScore still handles natively any extra dimensions in targets/preds.
+            rollout_iterations: Size of timedelta dimension (number of rollout iterations in multistep predictions).
+                Set to explicitly handle metrics computed on predictions from multistep rollout.
+                See param `lead_time_hours`.
             return_raw_dict: Whether to also return the raw output from the metrics.
         """
         # Quantiles for each var across gridpoints and times.
@@ -231,7 +232,7 @@ class Era5BrierSkillScore(TensorDictMetricBase):
         )
 
         # Variable indices include quantile (var, lev) --> (quantile, var, lev).
-        # Enable LabelWrapper to extract metrics properly from BrierSkillScore output..
+        # Enable LabelDictWrapper to extract metrics properly from BrierSkillScore output.
         def _add_quantile_index(variable_indices):
             out = {}
             for var, var_lev_idx in variable_indices.items():
@@ -244,33 +245,35 @@ class Era5BrierSkillScore(TensorDictMetricBase):
         # Initialize separate metrics for level vars and surface vars.
         kwargs = {}
         if surface_variables:
-            kwargs["surface"] = LabelWrapper(
+            kwargs["surface"] = LabelDictWrapper(
                 BrierSkillScore(
                     data_shape=(len(surface_variables), 1),
                     preprocess=partial(
                         _binarize, self.surface_high_quantiles, self.surface_low_quantiles
                     ),
                 ),
-                variable_indices=_add_quantile_index(
-                    era5.get_surface_variable_indices(surface_variables)
+                variable_indices=add_timedelta_index(
+                    _add_quantile_index(era5.get_surface_variable_indices(surface_variables)),
+                    lead_time_hours=lead_time_hours,
+                    rollout_iterations=rollout_iterations,
                 ),
-                lead_time_hours=lead_time_hours,
-                rollout_iterations=rollout_iterations,
                 return_raw_dict=return_raw_dict,
             )
         if level_variables:
-            kwargs["level"] = LabelWrapper(
+            kwargs["level"] = LabelDictWrapper(
                 BrierSkillScore(
                     data_shape=(len(level_variables), len(pressure_levels)),
                     preprocess=partial(
                         _binarize, self.level_high_quantiles, self.level_low_quantiles
                     ),
                 ),
-                variable_indices=_add_quantile_index(
-                    era5.get_headline_level_variable_indices(pressure_levels, level_variables)
+                variable_indices=add_timedelta_index(
+                    _add_quantile_index(
+                        era5.get_headline_level_variable_indices(pressure_levels, level_variables)
+                    ),
+                    lead_time_hours=lead_time_hours,
+                    rollout_iterations=rollout_iterations,
                 ),
-                lead_time_hours=lead_time_hours,
-                rollout_iterations=rollout_iterations,
                 return_raw_dict=return_raw_dict,
             )
         super().__init__(**kwargs)

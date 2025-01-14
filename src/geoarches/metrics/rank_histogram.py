@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from einops import rearrange
 from geoarches.dataloaders import era5
-from geoarches.metrics.label_wrapper import LabelWrapper
+from geoarches.metrics.label_wrapper import LabelDictWrapper, add_timedelta_index
 from scipy.stats import rankdata
 from torchmetrics import Metric
 
@@ -139,12 +139,14 @@ class Era5RankHistogram(TensorDictMetricBase):
             surface_variables: Names of level variables (used to get `variable_indices`).
             level_variables: Names of surface variables (used to get `variable_indices`).
             pressure_levels: pressure levels in data (used to get `variable_indices`).
-            lead_time_hours: set to explicitly handle predictions from multistep rollout.
-                FYI when set to None, EnsembleMetrics still handles natively any extra dimensions in targets/preds.
-                However, this option labels each timestep separately in output metric dict.
+            lead_time_hours: Timedelta between timestamps in multistep rollout.
+                Set to explicitly handle predictions from multistep rollout.
+                This option labels each timestep separately in output metric dict.
                 Assumes that data shape of predictions/targets are [batch, ..., multistep, var, lev, lat, lon].
-            rollout_iterations: set to explicitly handle metrics computed on predictions from multistep rollout.
-                Size of timedelta dimension. See param `lead_time_hours`.
+                FYI when set to None, Era5RankHistogram still handles natively any extra dimensions in targets/preds.
+            rollout_iterations: Number of rollout iterations in multistep predictions.
+                Set to explicitly handle metrics computed on predictions from multistep rollout.
+                See param `lead_time_hours`.
             return_raw_dict: Whether to also return the raw output from the metrics.
         """
         if rollout_iterations:
@@ -155,7 +157,7 @@ class Era5RankHistogram(TensorDictMetricBase):
             level_data_shape = (len(level_variables), len(pressure_levels))
 
         # Variable indices include quantile (var, lev) --> (var, lev, histogram bin number).
-        # Enable LabelWrapper to extract metrics properly from RankHistogram output.
+        # Enable LabelDictWrapper to extract metrics properly from RankHistogram output.
         def _add_bin_index(variable_indices):
             out = {}
             for var, var_lev_idx in variable_indices.items():
@@ -166,23 +168,25 @@ class Era5RankHistogram(TensorDictMetricBase):
         # Initialize separate metrics for level vars and surface vars.
         kwargs = {}
         if surface_variables:
-            kwargs["surface"] = LabelWrapper(
+            kwargs["surface"] = LabelDictWrapper(
                 RankHistogram(data_shape=surface_data_shape, n_members=n_members),
-                variable_indices=_add_bin_index(
-                    era5.get_surface_variable_indices(surface_variables)
+                variable_indices=add_timedelta_index(
+                    _add_bin_index(era5.get_surface_variable_indices(surface_variables)),
+                    lead_time_hours=lead_time_hours,
+                    rollout_iterations=rollout_iterations,
                 ),
-                lead_time_hours=lead_time_hours,
-                rollout_iterations=rollout_iterations,
                 return_raw_dict=return_raw_dict,
             )
         if level_variables:
-            kwargs["level"] = LabelWrapper(
+            kwargs["level"] = LabelDictWrapper(
                 RankHistogram(data_shape=level_data_shape, n_members=n_members),
-                variable_indices=_add_bin_index(
-                    era5.get_headline_level_variable_indices(pressure_levels, level_variables)
+                variable_indices=add_timedelta_index(
+                    _add_bin_index(
+                        era5.get_headline_level_variable_indices(pressure_levels, level_variables)
+                    ),
+                    lead_time_hours=lead_time_hours,
+                    rollout_iterations=rollout_iterations,
                 ),
-                lead_time_hours=lead_time_hours,
-                rollout_iterations=rollout_iterations,
                 return_raw_dict=return_raw_dict,
             )
         super().__init__(**kwargs)

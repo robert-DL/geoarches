@@ -2,7 +2,7 @@ from typing import Callable, Dict
 
 import torch
 from geoarches.dataloaders import era5
-from geoarches.metrics.label_wrapper import LabelWrapper
+from geoarches.metrics.label_wrapper import LabelDictWrapper, add_timedelta_index
 from torchmetrics import Metric
 
 from .metric_base import MetricBase, TensorDictMetricBase, compute_lat_weights_weatherbench
@@ -72,9 +72,6 @@ class DeterministicRMSE(Metric, MetricBase):
         self,
         data_shape: tuple,
         compute_lat_weights_fn: Callable[[int], torch.tensor] = compute_lat_weights_weatherbench,
-        # variable_indices: Dict[str, tuple],
-        # lead_time_hours: None | int = None,
-        # rollout_iterations: int = 1,
     ):
         """
         Args:
@@ -143,6 +140,7 @@ class DeterministicRMSE(Metric, MetricBase):
 
         return all_metrics
 
+
 class Era5DeterministicMetrics(TensorDictMetricBase):
     """Wrapper class around EnsembleMetrics for computing over surface and level variables.
 
@@ -169,28 +167,32 @@ class Era5DeterministicMetrics(TensorDictMetricBase):
             level_data_shape: (var, lev) shape for level variables.
             num_level_variables: Number of level variables (used to compute data_shape).
             rollout_iterations: Number of rollout iterations in multistep predictions.
-            this option labels each timestep separately in output metric dict.
+                this option labels each timestep separately in output metric dict.
                 Assumes that data shape of predictions/targets are [batch, ..., multistep, var, lev, lat, lon]
 
 
         """
         super().__init__(
-            surface=LabelWrapper(
+            surface=LabelDictWrapper(
                 DeterministicRMSE(
                     data_shape=(len(era5.surface_variables), 1),
                     compute_lat_weights_fn=compute_lat_weights_fn,
                 ),
-                variable_indices=era5.get_surface_variable_indices(),
-                lead_time_hours=lead_time_hours,
-                rollout_iterations=rollout_iterations,
+                variable_indices=add_timedelta_index(
+                    era5.get_surface_variable_indices(),
+                    lead_time_hours=lead_time_hours,
+                    rollout_iterations=rollout_iterations,
+                ),
             ),
-            level=LabelWrapper(
+            level=LabelDictWrapper(
                 DeterministicRMSE(
                     data_shape=(num_level_variables, len(pressure_levels)),
                     compute_lat_weights_fn=compute_lat_weights_fn,
                 ),
-                variable_indices=era5.get_headline_level_variable_indices(pressure_levels),
-                lead_time_hours=lead_time_hours,
-                rollout_iterations=rollout_iterations,
+                variable_indices=add_timedelta_index(
+                    era5.get_headline_level_variable_indices(pressure_levels),
+                    lead_time_hours=lead_time_hours,
+                    rollout_iterations=rollout_iterations,
+                ),
             ),
         )

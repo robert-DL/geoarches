@@ -227,3 +227,46 @@ class TestEra5EnsembleMetrics:
         for expected_metric_key in expected_metric_keys:
             assert expected_metric_key in output
             assert output[expected_metric_key].numel() == timedelta
+
+    def test_output_keys_with_timedelta_dimension(self):
+        level_variables = ["geopotential", "specific_humidity"]
+        pressure_levels = [500, 700]
+        lev_vars, lev = len(level_variables), len(pressure_levels)
+        timedelta, lat, lon = 2, 121, 240
+        metric = Era5EnsembleMetrics(
+            level_variables=level_variables,
+            pressure_levels=pressure_levels,
+            lead_time_hours=24,
+            rollout_iterations=timedelta,
+        )
+        preds = {
+            "surface": torch.randn(1, 3, timedelta, 4, 1, lat, lon),
+            "level": torch.randn(1, 3, timedelta, lev_vars, lev, lat, lon),
+        }
+        targets = {
+            "surface": torch.randn(1, timedelta, 4, 1, lat, lon),
+            "level": torch.randn(1, timedelta, lev_vars, lev, lat, lon),
+        }
+
+        metric.update(targets, preds)
+        metric.update(targets, preds)
+
+        output = metric.compute()
+
+        expected_metric_keys = [  # All expected keys for one metric.
+            "mse_U10m_24h",
+            "mse_U10m_48h",
+            "mse_V10m_24h",
+            "mse_V10m_48h",
+            "mse_T2m_24h",
+            "mse_T2m_48h",
+            "mse_SP_24h",
+            "mse_SP_48h",
+            "mse_Z500_24h",
+            "mse_Z500_48h",
+            "mse_Q700_24h",
+            "mse_Q700_48h",
+        ]
+        for expected_metric_key in expected_metric_keys:
+            assert expected_metric_key in output
+            assert output[expected_metric_key].numel() == 1

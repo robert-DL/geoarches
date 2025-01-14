@@ -211,6 +211,47 @@ class TestEra5BrierSkillScore:
             assert expected_metric_key in output
             assert output[expected_metric_key].numel() == timedelta
 
+    def test_output_keys_with_timedelta_dimension(self):
+        bs, mem, timedelta, lev, lat, lon = 2, 5, 2, 3, 121, 240
+        metric = Era5BrierSkillScore(
+            level_variables=["geopotential", "temperature"],
+            pressure_levels=[500, 700, 850],
+            lead_time_hours=24,
+            rollout_iterations=timedelta,
+        )
+        preds = {
+            "surface": torch.randn(bs, mem, timedelta, 4, 1, lat, lon),
+            "level": torch.randn(bs, mem, timedelta, 2, lev, lat, lon),
+        }
+        targets = {
+            "surface": torch.randn(bs, timedelta, 4, 1, lat, lon),
+            "level": torch.randn(bs, timedelta, 2, lev, lat, lon),
+        }
+
+        metric.update(targets, preds)
+        metric.update(targets, preds)
+
+        output = metric.compute()
+        expected_metric_keys = [  # All expected keys for final metric for one variable.
+            # For 24h lead time.
+            "brierskillscore_U10m_99.0%_24h",
+            "brierskillscore_U10m_99.9%_24h",
+            "brierskillscore_U10m_99.99%_24h",
+            "brierskillscore_U10m_1.0%_24h",
+            "brierskillscore_U10m_0.1%_24h",
+            "brierskillscore_U10m_0.01%_24h",
+            # For 48h lead time.
+            "brierskillscore_U10m_99.0%_48h",
+            "brierskillscore_U10m_99.9%_48h",
+            "brierskillscore_U10m_99.99%_48h",
+            "brierskillscore_U10m_1.0%_48h",
+            "brierskillscore_U10m_0.1%_48h",
+            "brierskillscore_U10m_0.01%_48h",
+        ]
+        for expected_metric_key in expected_metric_keys:
+            assert expected_metric_key in output
+            assert output[expected_metric_key].numel() == 1
+
     def test_variable_indices(self):
         metric = Era5BrierSkillScore()
 

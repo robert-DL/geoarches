@@ -5,7 +5,11 @@ import numpy as np
 import pytest
 import torch
 import xarray as xr
-from geoarches.metrics.label_wrapper import LabelWrapper, convert_metric_dict_to_xarray
+from geoarches.metrics.label_wrapper import (
+    LabelDictWrapper,
+    add_timedelta_index,
+    convert_metric_dict_to_xarray,
+)
 from torchmetrics import Metric
 
 
@@ -32,11 +36,9 @@ def variable_indices():
 class TestVarLevLabel:
     def test_convert_to_labeled_dict(self, mock_metric, variable_indices):
         # Test compute method with labeled dict output
-        wrapper = LabelWrapper(
+        wrapper = LabelDictWrapper(
             metric=mock_metric,
             variable_indices=variable_indices,
-            lead_time_hours=None,
-            rollout_iterations=None,
         )
 
         wrapper.update()
@@ -73,11 +75,9 @@ def mock_metric_with_timedelta_dimension():
 class TestTimeDeltaLabel:
     def test_convert_to_labeled_dict(self, mock_metric_with_timedelta_dimension, variable_indices):
         # Test compute method with labeled dict output
-        wrapper = LabelWrapper(
+        wrapper = LabelDictWrapper(
             metric=mock_metric_with_timedelta_dimension,
             variable_indices=variable_indices,
-            lead_time_hours=None,
-            rollout_iterations=None,
         )
 
         wrapper.update()
@@ -91,11 +91,13 @@ class TestTimeDeltaLabel:
         self, mock_metric_with_timedelta_dimension, variable_indices
     ):
         # Test compute method with labeled dict output
-        wrapper = LabelWrapper(
+        wrapper = LabelDictWrapper(
             metric=mock_metric_with_timedelta_dimension,
-            variable_indices=variable_indices,
-            lead_time_hours=6,  # Separate timedelta dimension.
-            rollout_iterations=3,
+            variable_indices=add_timedelta_index(
+                variable_indices,
+                lead_time_hours=6,  # Separate timedelta dimension.
+                rollout_iterations=3,
+            ),
         )
 
         wrapper.update()

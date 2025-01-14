@@ -9,44 +9,35 @@ from torch import Tensor
 from torchmetrics import Metric
 
 
-class LabelWrapper(Metric):
+class LabelDictWrapper(Metric):
     """Wrapper class for extracting metric values into a labelled dictionary.
     Helpful for WandB which needs to log 1D tensors.
 
     Expects the wrapped metric to return a dictionary holding computed metrics:
-        - keys: metric names
+        - keys: metric_name
         - values: torch tensors with shape (..., *(variable_index))
                   variable_index is passed in with param `variable_indices`
 
-    Returns dictionary of computed metrics:
-        - keys: metric name + variable name
+    LabelDictWrapper returns a dictionary of computed metrics:
+        - keys: <metric_name>_<variable_name>
         - value: torch tensors with shape (...)
 
     Warning: this class is not compatible with forward(), only use update() and compute().
     See https://github.com/Lightning-AI/torchmetrics/issues/987#issuecomment-2419846736.
 
     Example:
-        metric = LabelWrapper(EnsembleMetrics(preprocess=preprocess_fn),
-                              variable_indices=dict(T2m=(2, 0), U10=(0, 0)),
-                              lead_time_hours=24,
-                              multistep=2)
-        targets, preds = torch.tensor(batch, ..., var, lev, lat, lon), torch.tensor(batch, ..., var, lev, lat, lon)
+        metric = LabelDictWrapper(EnsembleMetrics(preprocess=preprocess_fn),
+                              variable_indices=dict(T2m_24h=(0, 2, 0), T2m_48h=(1, 2, 0), U10_24h=(0, 0, 0)), U10_48h=(1, 0, 0)))
+        targets, preds = torch.tensor(batch, timedelta, var, lev, lat, lon), torch.tensor(batch, nmem, timedelta, var, lev, lat, lon)
         metric.update(targets, preds)
-        labeled_dict = metric.compute()  # EnsembleMetrics returns {"mse": torch.tensor(... , var, lev) }
-        labelled_dict = {"mse_T2m": ..., "mse_T2m_48h": ..., "mse_U10_24h": ..., "mse_U10_48h": ...}
+        labeled_dict = metric.compute()  # EnsembleMetrics returns {"mse": torch.tensor(timedelta, var, lev) }
+        labelled_dict = {"mse_T2m_24h": ..., "mse_T2m_48h": ..., "mse_U10_24h": ..., "mse_U10_48h": ...}
 
     Args:
         metric: base metric that should be wrapped. It is assumed that the metric outputs a
             dict mapping metric name to tensors that have shape (..., *(variable_index)).
         variable_indices: Mapping from variable name to index (ie. var, lev) into tensor holding computed metric.
                 ie. dict(T2m=(2, 0), U10=(0, 0), V10=(1, 0), SP=(3, 0)).
-        lead_time_hours: set to explicitly handle metrics computed on predictions from multistep rollout.
-                Metrics are computed per lead time (aka. prediction_timedelta).
-                FYI when set to None, wrapper with 'dict' output format still handles natively any extra dimensions in targets/preds.
-                However, this option labels each timestep separately in output metric dict.
-                If lead_time_hours set, assumes that metric tensor shapes are (..., prediction_timedelta, *(variable_index)).
-        multistep: set to explicitly handle metrics computed on predictions from multistep rollout.
-                Size of prediction_timedelta dimension. See param `lead_time_hours`.
         return_raw_dict: Whether to also return the raw output from the metrics (along with the labelled dict).
     """
 
@@ -54,8 +45,6 @@ class LabelWrapper(Metric):
         self,
         metric: Metric,
         variable_indices: Dict[str, tuple],
-        lead_time_hours: None | int = None,
-        rollout_iterations: None | int = None,
         return_raw_dict: bool = False,
     ):
         super().__init__()
@@ -66,30 +55,12 @@ class LabelWrapper(Metric):
         self.metric = metric
         self.variable_indices = variable_indices
 
-        if bool(lead_time_hours) ^ bool(rollout_iterations):
-            raise ValueError(
-                f"Need to specify both `lead_time_hours` and `rollout_iterations` or neither. "
-                f"Got lead_time_hours: {lead_time_hours} and rollout_iterations: {rollout_iterations}."
-            )
-
-        self.lead_time_hours = lead_time_hours
-        self.rollout_iterations = rollout_iterations
         self.return_raw_dict = return_raw_dict
 
     def _convert(self, raw_metric_dict: Dict[str, Tensor]):
-        indices = {}
-        if self.lead_time_hours:
-            # Handle multistep predictions explicitly by separate labels in metric output dict.
-            for var, index in self.variable_indices.items():
-                for i in range(self.rollout_iterations):
-                    lead_time = self.lead_time_hours * (i + 1)
-                    indices[f"{var}_{lead_time}h"] = (i, *index)
-        else:
-            indices = self.variable_indices
-
         # Label metrics.
         labeled_dict = dict()
-        for var, index in indices.items():
+        for var, index in self.variable_indices.items():
             for metric_name, metric in raw_metric_dict.items():
                 labeled_dict[f"{metric_name}_{var}"] = metric.__getitem__((..., *index))
         return labeled_dict
@@ -108,6 +79,32 @@ class LabelWrapper(Metric):
         """Reset metric."""
         self.metric.reset()
         super().reset()
+
+
+def add_timedelta_index(
+    variable_indices: dict[str, tuple],
+    lead_time_hours: None | int = None,
+    rollout_iterations: None | int = None,
+):
+    """Add prediction_timedelta dimension to variable indices for LabelDictWrapper.
+
+    For example: if variable indexes are (var, lev).
+    Returns indexes with (timedelta, var, lev).
+    Means that LabelDictWrapper expects metric to return metrics with shape (..., timedelta, var, lev).
+
+    Args:
+        variable_indices: Mapping from variable name to index (ie. var, lev).
+        lead_time_hours: time delta between timesteps in multistep rollout.
+        rollout_iterations: Number of rollout iterations in multistep predictions. ie. Size of prediction_timdelta dimension.
+    """
+    if lead_time_hours is None or rollout_iterations is None:
+        return variable_indices
+    indices = {}
+    for var, index in variable_indices.items():
+        for i in range(rollout_iterations):
+            lead_time = lead_time_hours * (i + 1)
+            indices[f"{var}_{lead_time}h"] = (i, *index)
+    return indices
 
 
 def convert_metric_dict_to_xarray(

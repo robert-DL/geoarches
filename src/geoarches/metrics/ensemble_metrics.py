@@ -2,7 +2,7 @@ from typing import Callable, Dict, List
 
 import torch
 from geoarches.dataloaders import era5
-from geoarches.metrics.label_wrapper import LabelWrapper
+from geoarches.metrics.label_wrapper import LabelDictWrapper, add_timedelta_index
 from torchmetrics import Metric
 
 from . import metric_base
@@ -165,7 +165,8 @@ class Era5EnsembleMetrics(TensorDictMetricBase):
         targets: (batch, ..., timedelta, var, level, lat, lon)
         preds: (batch, nmembers, ..., timedelta, var, level, lat, lon)
 
-    Return dictionary of metrics reduced over batch, lat, lon.
+    Metrics are reduced over batch, lat, lon.
+    Returns a labelled dictionary for each (timdelta, var, lev).
     """
 
     def __init__(
@@ -185,35 +186,42 @@ class Era5EnsembleMetrics(TensorDictMetricBase):
             pressure_levels: pressure levels in data (used to get `variable_indices`).
             save_memory: compute dispersion in memory-concious fashion (avoid broadcasting on added member dimension).
                          Recommended when number of ensemble members exceeds 10.
-            lead_time_hours: set to explicitly handle predictions from multistep rollout.
-                FYI when set to None, EnsembleMetrics still handles natively any extra dimensions in targets/preds.
-                However, this option labels each timestep separately in output metric dict.
+            lead_time_hours: Timedelta between timestamps in multistep rollout.
+                Set to explicitly handle predictions from multistep rollout.
+                This option labels each timestep separately in output metric dict.
                 Assumes that data shape of predictions/targets are [batch, ..., multistep, var, lev, lat, lon].
-            rollout_iterations: set to explicitly handle metrics computed on predictions from multistep rollout.
-                Size of timedelta dimension. See param `lead_time_hours`.
+                FYI when set to None, Era5EnsembleMetrics still handles natively any extra dimensions in targets/preds.
+            rollout_iterations: Size of timedelta dimension (number of rollout iterations in multistep predictions).
+                Set to explicitly handle metrics computed on predictions from multistep rollout.
+                See param `lead_time_hours`.
             return_raw_dict: Whether to also return the raw output from the metrics.
         """
         # Initialize separate metrics for level vars and surface vars.
         kwargs = {}
         if surface_variables:
-            kwargs["surface"] = LabelWrapper(
-                EnsembleMetrics(data_shape=(len(surface_variables), 1)),
-                variable_indices=era5.get_surface_variable_indices(surface_variables),
-                lead_time_hours=lead_time_hours,
-                rollout_iterations=rollout_iterations,
+            surface_ensemble_metric = EnsembleMetrics(data_shape=(len(surface_variables), 1))
+            # Wrap metric with LabelDictWrapper to return dictionary with labelled metrics (for wandb logging).
+            kwargs["surface"] = LabelDictWrapper(
+                surface_ensemble_metric,
+                variable_indices=add_timedelta_index(
+                    era5.get_surface_variable_indices(surface_variables),
+                    lead_time_hours=lead_time_hours,
+                    rollout_iterations=rollout_iterations,
+                ),
                 return_raw_dict=return_raw_dict,
             )
         if level_variables:
-            kwargs["level"] = LabelWrapper(
-                EnsembleMetrics(
-                    data_shape=(len(level_variables), len(pressure_levels)),
-                    save_memory=save_memory,  # Save memory on level vars only.
+            level_ensemble_metric = EnsembleMetrics(
+                data_shape=(len(level_variables), len(pressure_levels)),
+                save_memory=save_memory,  # Save memory on level vars only.
+            )
+            kwargs["level"] = LabelDictWrapper(
+                level_ensemble_metric,
+                variable_indices=add_timedelta_index(
+                    era5.get_headline_level_variable_indices(pressure_levels, level_variables),
+                    lead_time_hours=lead_time_hours,
+                    rollout_iterations=rollout_iterations,
                 ),
-                variable_indices=era5.get_headline_level_variable_indices(
-                    pressure_levels, level_variables
-                ),
-                lead_time_hours=lead_time_hours,
-                rollout_iterations=rollout_iterations,
                 return_raw_dict=return_raw_dict,
             )
         super().__init__(**kwargs)
