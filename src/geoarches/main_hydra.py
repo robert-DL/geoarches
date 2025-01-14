@@ -1,3 +1,15 @@
+"""Main script to run pipeline for training or inferrence (specify `mode` arg as "train" or "test").
+
+Arguments are configured with hydra (which reads the `configs/` folder to compose the config).
+You can change arguments either by modifying the config files or through commandline.
+
+Example:
+    python -m geoarches.main_hydra
+    module=archesweather  # Uses module/archesweather.yaml
+    dataloader=era5   # Uses dataloader/era5.yaml
+    ++name=default_run  # Dir to save model checkpoints and name of Wandb run.
+"""
+
 import os
 import signal
 import warnings
@@ -155,7 +167,7 @@ def main(cfg: DictConfig):
         print("wandb service", os.environ.get("WANDB_DISABLE_SERVICE", "variable unset"))
         run_id = cfg.name + "-" + get_random_code() if cfg.cluster.use_custom_requeue else cfg.name
         logger = L.pytorch.loggers.WandbLogger(
-            **(dict(entity=cfg.entity) if hasattr(cfg, "entity") else {}),
+            **(dict(entity=cfg.entity) if hasattr(cfg, "entity") and cfg.entity else {}),
             project=cfg.project,
             name=cfg.name,
             id=run_id,

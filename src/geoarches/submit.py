@@ -1,4 +1,10 @@
-# Wrapper around main_hydra.py to launch job on SLURM cluster using submitit.
+"""
+Wrapper around main_hydra.py to launch job on SLURM cluster using submitit.
+
+Uses config from `configs/cluster/...`.
+Stores logs in `sblogs/{cfg.name}`.
+"""
+
 import hydra
 import submitit
 from omegaconf import DictConfig, OmegaConf

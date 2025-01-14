@@ -5,16 +5,17 @@ You can make changes on your own `dev` branch(s). This way you are not blocked b
 
 1. Create a `dev` branch from the `main` branch of geoarches to start making changes.
     ```sh
-    cd geo_arches
+    cd geoarches
     git checkout main
     git checkout -b dev_<name>
     ```
 
 2. Commit and push your changes. 
 3. Make sure tests pass by running `pytest tests/`.
-4. To incorporate your changes into the `main` branch, make a merge request and wait for review.
+4. Format your code with `ruff check --fix` and `ruff format`.
+5. To incorporate your changes into the `main` branch, make a merge request and wait for review.
 
-## Pull changes
+## Pull code updates.
 
 When the `main` branch of geoarches gets updated, and you want to incorporate changes.
 This is important for both:

@@ -85,9 +85,14 @@ wget -O src/geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016
 
 ## Using geoarches modules in python
 
-The recommended way to use the package is to depend on the package inside your own working directory. Making edits directly in the geoarches package will make updates more difficult, but if you prefer this option, you can create a development branch so as to rebase it on future updates of geoarches. (See [Contributing](CONTRIBUTING.md) section).
+Your directory structure after following [installation](#Installation) should look like this:
+├── geoarches
+│   ├── src
+│   │   ├── ...
+└── your_own_project
+    ├── ...
 
-After installing the geoarches package (see [Installation](#Installation)), you can use the geoarches tools directly by importing them from your directory, e.g.
+The recommended way to use the package is to depend on the package inside your own working directory, by importing them in your project code e.g.
 
 ```python
 from geoarches.dataloaders.era5 import Era5Forecast
@@ -95,6 +100,8 @@ ds = Era5Foreacast(path='data/era5_240/full',
                    load_prev=True,
                    norm_scheme='pangu')
 ```
+
+Making edits directly in the geoarches package will make updates more difficult, but if you prefer this option, you can create a development branch so as to rebase it on future updates of geoarches. (See [Contributing](CONTRIBUTING.md) section).
 
 ## Running models with geoarches
 
@@ -109,7 +116,7 @@ To train model named `default_run`, you can run
 python -m geoarches.main_hydra \
 module=archesweather \ # Uses module/archesweather.yaml
 dataloader=era5 \ # Uses dataloader/era5.yaml
-++name=default_run \ # Dir to save model checkpoints and name of Wandb run.
+++name=default_run \ # Name of run, used for Wandb logging and checkpoint dir
 ```
 This will start a training for the deterministic model `ArchesWeather` on ERA5 data.
 
@@ -181,9 +188,9 @@ For testing the generative models, you can also use the following options:
 ## Implementing your own models
 
 
-1) create a `configs` folder for you hydra configuration files. In this folder, you can put your own configs, e.g. by copying config files from geoarches and modifying them. Please note the config files should be put in the appropriate folder (`cluster`, `dataloader` or `module`) in you own `configs` folder.
+1) Create a `configs/` folder in your own project folder for your hydra configuration files. In this folder, you can put your own configs, e.g. by copying config files from geoarches and modifying them. Please note the config files should be put in the appropriate folder (`configs/cluster/`, `configs/dataloader/` or `configs/module/`). You will need a base `configs/config.yaml`. See geoarches for an example.
 
-2) Add new lightning modules or architectures in your working directory (we recommend putting lightning modules in a `lightning_modules` folder, and pytorch-only backbone architectures in a `backbones` folder). To tell hydra to use these modules, you can create a module config file `custom_forecast.yaml` in `configs/module` as following:
+2) Add new lightning modules or architectures in your working directory (we recommend putting lightning modules in a `lightning_modules` folder, and pytorch-only backbone architectures in a `backbones` folder). To tell hydra to use these modules, you can create a module config file `custom_forecast.yaml` under `configs/module/` and point to your new backbone and module classes:
 ```yaml
 module:
   _target_: lightning_modules.custom_module.CustomLightningModule
@@ -193,7 +200,7 @@ backbone:
   _target_: backbones.custom_backbone.CustomBackbone
   ...
 ```
-You can of course mix and match you custom modules and backbones with the ones in geoarches.
+You can of course mix and match your custom modules and backbones with the ones in geoarches.
 
 3. Training models only requires one to tell hydra to use your `configs` folder with
 ```sh
