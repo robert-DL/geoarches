@@ -9,6 +9,7 @@ geoarches is based on pytorch, pytorch-lightning and hydra for configuration. Af
 
 To develop your own models or make modifications to the existing ones, the intended usage is to write configurations files and pytorch lightning classes in your own working directory. Hydra will then discover your custom ``configs`` folder, and you can point to your custom classes from your custom config files.
 
+Link to a recent [presentation](https://docs.google.com/presentation/d/117-QKOIGCQWn70udbyyQ7UTYwUQeQPn1DYZC9ymos7M/edit?usp=sharing) of geoarches.
 ## Code Overview
 
 geoarches is meant to jumpstart your ML pipeline with building blocks for data handling, model training, and evaluation. This is an effort to share engineering tools and research knowledge across projects.
