@@ -62,10 +62,6 @@ class BrierSkillScore(Metric, MetricBase):
             "brierscore",
             "fbrierscore",
             "clim_prob",
-            # "confusion_tn",
-            # "confusion_tp",
-            # "confusion_fn",
-            # "confusion_fp",
         ):
             self.add_state(metric_name, default=torch.zeros(data_shape), dist_reduce_fx="sum")
 
@@ -84,8 +80,7 @@ class BrierSkillScore(Metric, MetricBase):
         if isinstance(preds, list):
             preds = torch.stack(preds, dim=1)
 
-        preds = preds.float()
-        targets = targets.float()
+        targets, preds = targets.float(), preds.float()
         self.nsamples += preds.shape[0]
         nmembers = preds.shape[1]
 
@@ -102,27 +97,6 @@ class BrierSkillScore(Metric, MetricBase):
 
         self.clim_prob = self.clim_prob + self.weighted_mean(targets).sum(0)
 
-        # this is for computing relative economic value
-        # pred_ensemble_mean_binary: whether the ensemble mean exceeds the quantile threshold
-        # move q to first dimension, then move back to second dimension
-        # print("pred ensemble mean shape", pred_ensemble_mean.shape)
-        # (bs, T, q, var, ..)
-        pred_ensemble_mean_binary = self.preprocess(
-            pred_ensemble_mean, input_quantiles=True
-        ).float()
-        # self.confusion_tn = self.confusion_tn + self.weighted_mean(
-        #     (1 - targets) * (1 - pred_ensemble_mean_binary)
-        # ).sum(0)
-        # self.confusion_tp = self.confusion_tp + self.weighted_mean(
-        #     targets * pred_ensemble_mean_binary
-        # ).sum(0)
-        # self.confusion_fn = self.confusion_fn + self.weighted_mean(
-        #     targets * (1 - pred_ensemble_mean_binary)
-        # ).sum(0)
-        # self.confusion_fp = self.confusion_fp + self.weighted_mean(
-        #     (1 - targets) * pred_ensemble_mean_binary
-        # ).sum(0)
-
     def compute(self) -> torch.Tensor:
         """Compute final metrics utilizing internal states."""
         brierscore = self.brierscore / self.nsamples
@@ -136,16 +110,12 @@ class BrierSkillScore(Metric, MetricBase):
             fbrierscore=self.fbrierscore / self.nsamples,
             brierclimscore=clim_brierscore,
             brierskillscore=(1 - brierscore / clim_brierscore),
-            # confusion_tn=self.confusion_tn / self.nsamples,
-            # confusion_tp=self.confusion_tp / self.nsamples,
-            # confusion_fn=self.confusion_fn / self.nsamples,
-            # confusion_fp=self.confusion_fp / self.nsamples,
         )
 
         return metrics
 
 
-def _binarize(high_quantiles, low_quantiles, target, pred=None, input_quantiles=False):
+def _binarize(high_quantiles, low_quantiles, target, pred=None):
     """
     Binarize for exceedance of the 99.99th, 99.9th, and 99th percentile events and below the 0.01, 0.1
     and 1st percentiles across all lead times.
@@ -161,30 +131,14 @@ def _binarize(high_quantiles, low_quantiles, target, pred=None, input_quantiles=
     low_quantiles = rearrange(low_quantiles, "var q lev lat lon -> q 1 var lev lat lon")
 
     # Binarize.
-    if input_quantiles:  # means we have b ... q var lev lat lon
-        target = rearrange(target, "b ... q var lev lat lon -> q b ... var lev lat lon")
-        # one more extra
-        extra_dims = len(target.shape) - 6
+    extra_dims = len(target.shape) - 5
+    for _ in range(extra_dims):
+        high_quantiles = high_quantiles.unsqueeze(2)
+        low_quantiles = low_quantiles.unsqueeze(2)
 
-        for _ in range(extra_dims):
-            high_quantiles = high_quantiles.unsqueeze(2)
-            low_quantiles = low_quantiles.unsqueeze(2)
-
-        target = torch.concat(
-            [
-                target[:3] > high_quantiles.to(target.device),
-                target[3:] < low_quantiles.to(target.device),
-            ]
-        )
-    else:
-        extra_dims = len(target.shape) - 5
-        for _ in range(extra_dims):
-            high_quantiles = high_quantiles.unsqueeze(2)
-            low_quantiles = low_quantiles.unsqueeze(2)
-
-        target = torch.concat(
-            [target > high_quantiles.to(target.device), target < low_quantiles.to(target.device)]
-        )
+    target = torch.concat(
+        [target > high_quantiles.to(target.device), target < low_quantiles.to(target.device)]
+    )
     target = rearrange(target, "q b ... var lev lat lon -> b ... q var lev lat lon")
 
     if pred is None:
