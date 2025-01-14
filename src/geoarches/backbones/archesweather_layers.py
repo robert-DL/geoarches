@@ -1,7 +1,6 @@
 # adapted from https://github.com/lizhuoq/WeatherLearn/blob/master/weatherlearn/models/pangu/pangu.py
 
 import torch
-from timm.layers.mlp import SwiGLU
 from timm.models.layers import DropPath, trunc_normal_
 from torch import nn
 

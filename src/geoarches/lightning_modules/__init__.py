@@ -1,2 +1,2 @@
-from .base_module import BaseLightningModule, load_module, AvgModule
+from .base_module import AvgModule, BaseLightningModule, load_module
 from .forecast import ForecastModule, ForecastModuleWithCond

@@ -1,11 +1,6 @@
-import sys
-from pathlib import Path
 import numpy as np
-import torch
 import pandas as pd
-
 from geoarches.dataloaders import era5, netcdf
-from tensordict.tensordict import TensorDict
 
 
 class Era5ForecastWithPrediction(era5.Era5Forecast):

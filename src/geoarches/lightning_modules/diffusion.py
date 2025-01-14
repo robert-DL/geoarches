@@ -8,7 +8,6 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
-from diffusers.training_utils import compute_snr
 from hydra.utils import instantiate
 from tensordict.tensordict import TensorDict
 from tqdm import tqdm
