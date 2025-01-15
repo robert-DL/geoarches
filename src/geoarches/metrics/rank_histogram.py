@@ -144,7 +144,7 @@ class Era5RankHistogram(TensorDictMetricBase):
                 This option labels each timestep separately in output metric dict.
                 Assumes that data shape of predictions/targets are [batch, ..., multistep, var, lev, lat, lon].
                 FYI when set to None, Era5RankHistogram still handles natively any extra dimensions in targets/preds.
-            rollout_iterations: Number of rollout iterations in multistep predictions.
+            rollout_iterations: Size of timedelta dimension (number of rollout iterations in multistep predictions).
                 Set to explicitly handle metrics computed on predictions from multistep rollout.
                 See param `lead_time_hours`.
             return_raw_dict: Whether to also return the raw output from the metrics.

@@ -7,6 +7,7 @@ import torch
 import xarray as xr
 from geoarches.metrics.label_wrapper import (
     LabelDictWrapper,
+    LabelXarrayWrapper,
     add_timedelta_index,
     convert_metric_dict_to_xarray,
 )
@@ -48,6 +49,40 @@ class TestVarLevLabel:
         torch.testing.assert_close(output["rmse_var2"], torch.tensor(1.0))
         torch.testing.assert_close(output["mae_var1"], torch.tensor(0.3))
         torch.testing.assert_close(output["mae_var2"], torch.tensor(0.8))
+
+    def test_convert_to_xarray(self, mock_metric, variable_indices):
+        # Test compute method with labeled dict output
+        wrapper = LabelXarrayWrapper(
+            metric=mock_metric,
+            coord_names=["variable", "level"],
+            coords=[
+                ["var1", "var2"],
+                [1],
+            ],
+        )
+
+        wrapper.update()
+        output = wrapper.compute()
+
+        xr.testing.assert_equal(
+            output,
+            xr.Dataset(
+                data_vars={
+                    "rmse": xr.DataArray(
+                        data=np.array([[0.5], [1.0]], dtype=np.float32),
+                        dims=("variable", "level"),
+                    ),
+                    "mae": xr.DataArray(
+                        data=np.array([[0.3], [0.8]], dtype=np.float32),
+                        dims=("variable", "level"),
+                    ),
+                },
+                coords={
+                    "variable": ["var1", "var2"],
+                    "level": [1],
+                },
+            ),
+        )
 
 
 @pytest.fixture
