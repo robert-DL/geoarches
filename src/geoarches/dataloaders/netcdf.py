@@ -18,10 +18,13 @@ engine_mapping = {
 }
 
 
-class NetcdfDataset(torch.utils.data.Dataset):
+class XarrayDataset(torch.utils.data.Dataset):
     """
-    dataset to read a list of netcdf files and iterate through it.
-    constraint: it should be indexed by at least one dimension "time".
+    dataset to read a list of xarray files and iterate through it by timestamp.
+    constraint: it should be indexed by at least one dimension named "time".
+
+    Child classes that inherit this class, should implement convert_to_tensordict()
+    which converts an xarray dataset into a tensordict (to feed into the model).
     """
 
     def __init__(
@@ -36,14 +39,14 @@ class NetcdfDataset(torch.utils.data.Dataset):
     ):
         """
         Args:
-            path: Single filepath or directory holding files.
-            variables: Dict holding variable lists mapped by their keys to be processed into tensordict.
-                e.g. {surface:[...], level:[...]
-            dimension_indexers: Dict of dimensions to select using Dataset.sel(dimension_indexers).
-            filename_filter: To filter files within data directory based on filename.
-            engine: xarray dataset backend.
-            file_extension: Expected file extension for data file(s) (ie. '.zarr').
+            path: Single filepath or directory holding xarray files.
+            variables: Dict holding xarray data variable lists mapped by their keys to be processed into tensordict.
+                e.g. {surface: [data_var1, datavar2, ...], level: [...]}
+                Used in convert_to_tensordict() to read data arrays in the xarray dataset and convert to tensordict.
+            dimension_indexers: Dict of dimensions to select in xarray using Dataset.sel(dimension_indexers).
+            filename_filter: To filter files within `path` based on filename.
             return_timestamp: Whether to return timestamp in __getitem__() along with tensordict.
+            warning_on_nan: Whether to log warning if nan data found.
             limit_examples: Return set number of examples in dataset
         """
         self.filename_filter = filename_filter
@@ -106,9 +109,10 @@ class NetcdfDataset(torch.utils.data.Dataset):
 
     def convert_to_tensordict(self, xr_dataset):
         """
-        how to convert to tensordict.
-        by default it uses a mapping key: variables,
-        e.g. {surface:[...], level:[...]
+        Convert xarray dataset to tensordict.
+
+        By default, it uses a mapping key from self.variables,
+            e.g. {surface:[data_var1, data_var2, ...], level:[...]}
         """
         # Optionally select dimensions.
         if self.dimension_indexers and not self.already_ran_index_selection:

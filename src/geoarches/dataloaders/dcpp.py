@@ -5,7 +5,7 @@ import torch
 from tensordict.tensordict import TensorDict
 
 from .. import stats as geoarches_stats
-from .netcdf import NetcdfDataset
+from .netcdf import XarrayDataset
 
 filename_filters = dict(
     all=(lambda _: True),
@@ -32,7 +32,7 @@ def replace_nans(tensordict, value=0):
     )
 
 
-class DCPPForecast(NetcdfDataset):
+class DCPPForecast(XarrayDataset):
     """
     Load DCPP data for the forecast task.
 

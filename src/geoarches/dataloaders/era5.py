@@ -10,7 +10,7 @@ import xarray as xr
 from tensordict.tensordict import TensorDict
 
 from .. import stats as geoarches_stats
-from .netcdf import NetcdfDataset
+from .netcdf import XarrayDataset
 
 filename_filters = dict(
     all=(lambda _: True),
@@ -87,7 +87,7 @@ def get_headline_level_variable_indices(
     return {k: v for k, v in out.items() if k in ("Z500", "T850", "Q700", "U850", "V850")}
 
 
-class Era5Dataset(NetcdfDataset):
+class Era5Dataset(XarrayDataset):
     """
     This class is just for loading era5-like data, without any future or pred state.
     Does not do any normalization either.
@@ -105,7 +105,8 @@ class Era5Dataset(NetcdfDataset):
         """
         Args:
             path: Single filepath or directory holding files.
-            domain: Specify data split for the filename filters (eg. train, val, test, testz0012..)
+            domain: Specify data split for the filename filters (eg. train, val, test, testz0012..).
+                Used if `filename_filter` is None.
             filename_filter: To filter files within `path` based on filename.
                 By default, filters files based on `domain`.
             variables: Variables to load from dataset. Dict holding variable lists mapped by their keys to be processed into tensordict.
