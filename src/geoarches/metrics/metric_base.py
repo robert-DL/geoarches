@@ -3,6 +3,7 @@ from typing import Callable, Dict, List
 
 import torch
 import torch.nn as nn
+import xarray as xr
 from tensordict.tensordict import TensorDict
 from torchmetrics import Metric
 
@@ -143,7 +144,7 @@ class TensorDictMetricBase(Metric):
         """Return aggregated collections of the computed metrics.
 
         Elements from each metric are aggregated. Handles multiple return values per metric.
-        Assumes all metrics return the number of outputs.
+        Assumes all metrics return the same number of outputs.
         """
         aggregated_outputs = []
 
@@ -153,12 +154,24 @@ class TensorDictMetricBase(Metric):
             if not isinstance(outputs, tuple):
                 outputs = [outputs]
             for i, output in enumerate(outputs):
-                if len(aggregated_outputs) - 1 < i:
-                    aggregated_outputs.append({})
-                if aggregated_outputs[i].keys().isdisjoint(output.keys()):
-                    aggregated_outputs[i].update(output)
-                else:
-                    aggregated_outputs[i].update({f"{k}_{key}": v for k, v in output.items()})
+                # Handle returned dictionary.
+                if isinstance(output, dict):
+                    if len(aggregated_outputs) - 1 < i:
+                        aggregated_outputs.append({})
+                    if aggregated_outputs[i].keys().isdisjoint(output.keys()):
+                        aggregated_outputs[i].update(output)
+                    else:
+                        aggregated_outputs[i].update({f"{k}_{key}": v for k, v in output.items()})
+                # Handle returned xarray dataset.
+                elif isinstance(output, xr.Dataset):
+                    if len(aggregated_outputs) - 1 < i:
+                        aggregated_outputs.append([])
+                    aggregated_outputs[i].append(output)
+
+        for output in aggregated_outputs:
+            if isinstance(output, list):
+                merged_dataset = xr.merge(output)
+                aggregated_outputs[i] = merged_dataset
 
         if len(aggregated_outputs) == 1:
             return aggregated_outputs[0]
