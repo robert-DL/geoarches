@@ -8,13 +8,13 @@ import torch.nn.functional as F  # noqa N812
 import torch.utils.checkpoint as gradient_checkpoint
 from geoarches.backbones.archesweather_layers import ICNR_init
 from tensordict.tensordict import TensorDict
+from timm.layers.mlp import SwiGLU
 
 from .archesweather_layers import (
     CondBasicLayer,
     DownSample,
     LinVert,
     Mlp,
-    SwiGLU,
     UpSample,
 )
 
