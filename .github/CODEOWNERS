@@ -1,0 +1,6 @@
+# These owners will be the default owners for everything in
+# the repo.
+*       @14renus @gcouairon
+
+/src/geoarches/backbones @gcouairon
+/src/geoarches/lightning_modules @gcouairon
