@@ -1,10 +1,11 @@
 import numpy as np
 import torch
 from einops import rearrange
-from geoarches.dataloaders import era5
-from geoarches.metrics.label_wrapper import LabelDictWrapper, add_timedelta_index
 from scipy.stats import rankdata
 from torchmetrics import Metric
+
+from geoarches.dataloaders import era5
+from geoarches.metrics.label_wrapper import LabelDictWrapper, add_timedelta_index
 
 from .metric_base import TensorDictMetricBase
 
@@ -12,7 +13,7 @@ from .metric_base import TensorDictMetricBase
 class RankHistogram(Metric):
     """Iterative calculation of rank histogram as defined in the GenCast paper.
 
-    Rank historgram measures reliability of the ensemble distribution or how well the ensemble distribution spread models the observation distribution.
+    Rank histogram measures reliability of the ensemble distribution or how well the ensemble distribution spread models the observation distribution.
     by measuring the frequency of where observations fall (rank) within the spread of sorted ensemble member predictions.
     Expectation is uniform distribution over all possible ranks.
 
@@ -162,7 +163,7 @@ class Era5RankHistogram(TensorDictMetricBase):
             out = {}
             for var, var_lev_idx in variable_indices.items():
                 for bin_idx in range(n_members + 1):
-                    out[f"{var}_{bin_idx+1}"] = (*var_lev_idx, bin_idx)
+                    out[f"{var}_{bin_idx + 1}"] = (*var_lev_idx, bin_idx)
             return out
 
         # Initialize separate metrics for level vars and surface vars.

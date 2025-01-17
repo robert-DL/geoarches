@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import xarray as xr
+
 from geoarches.metrics.label_wrapper import convert_metric_dict_to_xarray
 
 plot_metric_kwargs = {
@@ -126,7 +127,7 @@ def plot_brier_metric(
     if y_label:
         fig.supylabel(y_label)
     for q in range(3):
-        axs[q, 0].set_ylabel(f"{10 ** -q}% extremes")
+        axs[q, 0].set_ylabel(f"{10**-q}% extremes")
 
     for model, ds in data_dict.items():
         for i, (var, quantiles) in enumerate(zip(vars, quantiles_per_var)):
@@ -284,9 +285,9 @@ def main():
 
     args = parser.parse_args()
 
-    assert len(args.metric_paths) == len(
-        args.model_names_for_legend
-    ), "Len of metric_paths != len of model_names_for_legend."
+    assert len(args.metric_paths) == len(args.model_names_for_legend), (
+        "Len of metric_paths != len of model_names_for_legend."
+    )
 
     output_dir = args.output_dir
     Path(output_dir).mkdir(parents=True, exist_ok=True)

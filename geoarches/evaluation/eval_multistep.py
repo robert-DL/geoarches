@@ -1,7 +1,7 @@
 """Script to compute and store metrics defined in metric_registry.py.
 
 How to use:
- 1. Run model inferrence and store outputs in xarray format (ie. zarr or netcdf).
+ 1. Run model inference and store outputs in xarray format (ie. zarr or netcdf).
  2. Define metric and its arguments using register_class() in metric_registry.py (see file for examples).
  3. Run this script, passing in the metric name to --metrics.
 
@@ -20,11 +20,12 @@ from pathlib import Path
 
 import torch
 from einops import rearrange
-from geoarches.dataloaders import era5
-from geoarches.metrics.label_wrapper import convert_metric_dict_to_xarray
 from tensordict.tensordict import TensorDict
 from torch.utils.data import default_collate
 from tqdm import tqdm
+
+from geoarches.dataloaders import era5
+from geoarches.metrics.label_wrapper import convert_metric_dict_to_xarray
 
 from . import metric_registry
 

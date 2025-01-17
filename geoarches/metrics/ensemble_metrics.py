@@ -1,9 +1,10 @@
 from typing import Callable, Dict, List
 
 import torch
+from torchmetrics import Metric
+
 from geoarches.dataloaders import era5
 from geoarches.metrics.label_wrapper import LabelDictWrapper, add_timedelta_index
-from torchmetrics import Metric
 
 from . import metric_base
 from .metric_base import MetricBase, TensorDictMetricBase
@@ -166,7 +167,7 @@ class Era5EnsembleMetrics(TensorDictMetricBase):
         preds: (batch, nmembers, ..., timedelta, var, level, lat, lon)
 
     Metrics are reduced over batch, lat, lon.
-    Returns a labelled dictionary for each (timdelta, var, lev).
+    Returns a labelled dictionary for each (timedelta, var, lev).
     """
 
     def __init__(

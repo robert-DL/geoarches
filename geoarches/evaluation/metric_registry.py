@@ -3,6 +3,7 @@
 from typing import List, Type
 
 import torchmetrics
+
 from geoarches.metrics.brier_skill_score import Era5BrierSkillScore
 from geoarches.metrics.ensemble_metrics import Era5EnsembleMetrics
 from geoarches.metrics.rank_histogram import Era5RankHistogram
@@ -30,8 +31,7 @@ def instantiate_metric(metric_name: str, **extra_kwargs):
         return class_ref(**kwargs, **extra_kwargs)
     else:
         raise ValueError(
-            f"Metric {metric_name} not found in registry. "
-            f"Available metrics: {available_metrics()}"
+            f"Metric {metric_name} not found in registry. Available metrics: {available_metrics()}"
         )
 
 
