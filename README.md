@@ -87,11 +87,13 @@ wget -O src/geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016
 ## Using geoarches modules in python
 
 Your directory structure after following [installation](#Installation) should look like this:
+```
 ├── geoarches
 │   ├── src
 │   │   ├── ...
 └── your_own_project
     ├── ...
+```
 
 The recommended way to use the package is to depend on the package inside your own working directory, by importing them in your project code e.g.
 
