@@ -1,0 +1,39 @@
+site_name: geoarches
+
+# Repository
+repo_name: INRIA/geoarches
+repo_url: https://github.com/INRIA/geoarches
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.tracking
+  logo: img/logo.png
+  favicon: 'img/logo.png'
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+    - mkdocs-jupyter
+
+markdown_extensions:
+  - def_list   # bullet points
+  - attr_list  # add HTML attributes to Markdown elements (align and style images)
+  - md_in_html # parse Markdown in HTML blocks
+
+# Page tree
+nav:
+  - Home: index.md
+  - Getting started: 
+      - Installation: getting_started/installation.md
+      - Using geoarches modules: getting_started/using_geoarches.md
+  - User Guide: user_guide.md
+  - Contributing:
+      - Contribute to project: contributing/contribute.md
+      - Report bug or feature request: contributing/bug.md
+  - ArchesWeather: 
+      - Run: archesweather/run.ipynb
+      - Train: archesweather/train.md
+
