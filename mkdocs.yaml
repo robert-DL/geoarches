@@ -7,9 +7,10 @@ repo_url: https://github.com/INRIA/geoarches
 theme:
   name: material
   features:
-    - navigation.tabs
-    - navigation.tabs.sticky
-    - navigation.tracking
+    - navigation.tabs  # Put sections as tabs on navigation bar.
+    - navigation.tabs.sticky  # Keep navigation bar when scrolling.
+    - navigation.tracking  # The url evolves with scrolling.
+    - navigation.indexes  # Can add index.md as homepage each section.
   logo: img/logo.png
   favicon: 'img/logo.png'
   icon:
@@ -22,6 +23,10 @@ markdown_extensions:
   - def_list   # bullet points
   - attr_list  # add HTML attributes to Markdown elements (align and style images)
   - md_in_html # parse Markdown in HTML blocks
+  - pymdownx.highlight # highlight code blocks, used by SuperFences
+  - pymdownx.superfences # nesting code/content blocks, also to highlight code blocks
+  - admonition # admonitions ie. 'tip' and 'note'
+  - pymdownx.details # collapsible admonition
 
 # Page tree
 nav:
@@ -29,11 +34,18 @@ nav:
   - Getting started: 
       - Installation: getting_started/installation.md
       - Using geoarches modules: getting_started/using_geoarches.md
-  - User Guide: user_guide.md
+  - User Guide:
+      - user_guide/index.md
+      - Train: user_guide/train.md
+      - Run and evaluate: user_guide/evaluate.md
+      - Custom models: user_guide/custom_models.md
+      - Pipeline API: user_guide/args.md
   - Contributing:
       - Contribute to project: contributing/contribute.md
       - Report bug or feature request: contributing/bug.md
-  - ArchesWeather: 
+  - ArchesWeather:
+      - archesweather/index.md
+      - Setup: archesweather/setup.md
       - Run: archesweather/run.ipynb
       - Train: archesweather/train.md
 
