@@ -77,6 +77,12 @@ def main():
         help="Directory or file path to find model predictions.",
     )
     parser.add_argument(
+        "--pred_filename_filter",
+        nargs="*",  # Accepts 0 or more arguments as a list.
+        type=str,
+        help="Substring(s) in filenames under --pred_path to keep files to run inference on.",
+    )
+    parser.add_argument(
         "--groundtruth_path",
         type=str,
         required=True,
@@ -129,8 +135,6 @@ def main():
     torch.set_grad_enabled(False)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    print("Reading from predictions path:", args.pred_path)
-
     # Output directory to save evaluation.
     output_dir = args.output_dir
     Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -164,10 +168,16 @@ def main():
     print(f"Reading {len(ds_test.files)} files from groundtruth path: {args.groundtruth_path}.")
 
     # Predictions.
+    def _pred_filename_filter(filename):
+        for substring in args.pred_filename_filter:
+            if substring not in filename:
+                return False
+        return True
+
     if not args.eval_clim:
         ds_pred = era5.Era5Dataset(
             path=args.pred_path,
-            filename_filter=(lambda x: True),  # Update filename_filter to filter within pred_path.
+            filename_filter=_pred_filename_filter,  # Update filename_filter to filter within pred_path.
             variables=variables,
             return_timestamp=True,
             dimension_indexers=dict(
@@ -220,7 +230,6 @@ def main():
             pressure_levels=[500, 700, 850],
             lead_time_hours=24 if args.multistep else None,
             rollout_iterations=args.multistep,
-            return_raw_dict=True,
         ).to(device)
     print(f"Computing: {metrics.keys()}")
 
@@ -256,7 +265,7 @@ def main():
             metric.update(target.to(device), pred.to(device))
 
     for metric_name, metric in metrics.items():
-        raw_dict, labelled_metric_output = metric.compute()
+        labelled_metric_output = metric.compute()
 
         if Path(args.pred_path).is_file():
             output_filename = f"{Path(args.pred_path).stem}-{metric_name}"
@@ -276,18 +285,14 @@ def main():
             ds = convert_metric_dict_to_xarray(labelled_dict, extra_dimensions)
 
             # Write labeled dict.
-            labelled_dict["groundtruth_path"] = args.groundtruth_path
-            labelled_dict["predictions_path"] = args.pred_path
+            labelled_dict["metadata"] = dict(
+                groundtruth_path=args.groundtruth_path, predictions_path=args.pred_path
+            )
             torch.save(labelled_dict, Path(output_dir).joinpath(f"{output_filename}.pt"))
         else:
             ds = labelled_metric_output
         # Write xr dataset.
         ds.to_netcdf(Path(output_dir).joinpath(f"{output_filename}.nc"))
-
-        # Write raw score dict.
-        raw_dict["groundtruth_path"] = args.groundtruth_path
-        raw_dict["predictions_path"] = args.pred_path
-        torch.save(raw_dict, Path(output_dir).joinpath(f"{output_filename}-raw.pt"))
 
 
 if __name__ == "__main__":

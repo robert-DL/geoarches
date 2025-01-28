@@ -14,7 +14,7 @@ class LabelDictWrapper(Metric):
     """Wrapper class around metric for extracting metric outputs into a labelled dictionary.
     Helpful for WandB which needs to log single values.
 
-    Expects the wrapped metric to return a dictionary holding computed metrics:
+    Expects the metric to return a dictionary holding computed metrics:
         - keys: metric_name
         - values: torch tensors with shape (..., *(variable_index))
                   variable_index is passed in with param `variable_indices`
@@ -39,14 +39,12 @@ class LabelDictWrapper(Metric):
             dict mapping metric name to tensors that have shape (..., *(variable_index)).
         variable_indices: Mapping from variable name to index (ie. var, lev) into tensor holding computed metric.
                 ie. dict(T2m=(2, 0), U10=(0, 0), V10=(1, 0), SP=(3, 0)).
-        return_raw_dict: Whether to also return the raw output from the metrics (along with the labelled dict).
     """
 
     def __init__(
         self,
         metric: Metric,
         variable_indices: Dict[str, tuple],
-        return_raw_dict: bool = False,
     ):
         super().__init__()
         if not isinstance(metric, Metric):
@@ -55,8 +53,6 @@ class LabelDictWrapper(Metric):
             )
         self.metric = metric
         self.variable_indices = variable_indices
-
-        self.return_raw_dict = return_raw_dict
 
     def _convert(self, raw_metric_dict: Dict[str, Tensor]):
         # Label metrics.
@@ -70,11 +66,7 @@ class LabelDictWrapper(Metric):
         self.metric.update(*args, **kwargs)
 
     def compute(self) -> Dict[str, Tensor]:
-        raw_metric_dict = self.metric.compute()
-        if self.return_raw_dict:
-            return raw_metric_dict, self._convert(raw_metric_dict)
-        else:
-            return self._convert(raw_metric_dict)
+        return self._convert(self.metric.compute())
 
     def reset(self) -> None:
         """Reset metric."""
@@ -123,6 +115,8 @@ def convert_metric_dict_to_xarray(
             where the separator between dimensions is an underscore.
         extra_dimensions: list of dimension names, if any extra beyond <metric> and <var>.
     """
+    if "metadata" in labeled_dict:
+        del labeled_dict["metadata"]
 
     def _convert_coord(name, value):
         if "timedelta" in name:
@@ -140,36 +134,36 @@ def convert_metric_dict_to_xarray(
         labels = label.split("_")
         if len(labels) - 2 != len(extra_dimensions):
             raise ValueError(
-                f"Expected length of extra_dimensions for key {label} to be: {len(labels) - 2}."
+                f"Expected length of extra_dimensions for key {label} to be: {len(labels) - 2}. Got extra_dimensions={extra_dimensions}."
             )
         metrics.add(labels[0])
         variables.add(labels[1])
         for i, dim in enumerate(extra_dimensions):
             coords[dim].add(labels[i + 2])
 
-    dimension_shape = [len(coord) for coord in (variables, *coords.values())]
+    dimension_shape = [len(coord) for coord in (metrics, *coords.values())]
     # Sort coordinates.
-    variables = sorted(list(variables))
+    metrics = sorted(list(metrics))
     for k, coord in coords.items():
         coords[k] = sorted(list(coord), key=lambda x: _convert_coord(k, x))
 
     # Aggregate data arrays by variable.
-    dimensions = ["variable"] + extra_dimensions
+    dimensions = ["metric"] + extra_dimensions
     data_arrays = {}
-    for metric in metrics:
+    for var in variables:
         data = []
-        for dims in itertools.product(variables, *coords.values()):
-            var, other_dims = dims[0], dims[1:]
+        for dims in itertools.product(metrics, *coords.values()):
+            metric, other_dims = dims[0], dims[1:]
             other_dims = "_" + "_".join(other_dims) if other_dims else ""
             key = f"{metric}_{var}{other_dims}"
             data.append(labeled_dict[key])
         data = np.array(data).reshape(dimension_shape)
-        data_arrays[metric] = (dimensions, data)
+        data_arrays[var] = (dimensions, data)
 
     # Prepare coordinates.
     for k, coord in coords.items():
         coords[k] = [_convert_coord(k, x) for x in coord]
-    coords["variable"] = variables
+    coords["metric"] = metrics
 
     return xr.Dataset(data_vars=data_arrays, coords=coords)
 
@@ -178,62 +172,61 @@ class LabelXarrayWrapper(Metric):
     """Wrapper class around metric for extracting metric outputs into a labelled xarray.
     Helpful for easier analysis.
 
-    Expects the wrapped metric to return a dictionary holding computed metrics:
+    Expects the metric to return a dictionary holding computed metrics:
         - keys: metric name
         - values: torch tensor with shape (dim1,  dim2, ...)
 
-    Returns xarray of computed metrics:
-        - with metric as data variables and dim1, dim2, as coords.
+    LabelXarrayWrapper returns xarray of computed metrics:
+        - with variable as data variables and (metric, dim1, dim2) as dimensions.
 
     Warning: this class is not compatible with forward(), only use update() and compute().
     See https://github.com/Lightning-AI/torchmetrics/issues/987#issuecomment-2419846736.
 
     Example:
         metric = LabelXarrayWrapper(EnsembleMetrics(preprocess=preprocess_fn),
-                                    coord_names = ['variable', 'level'],
+                                    dims = ['variable', 'level'],
                                     coords= (['T2m','U10m'], [500, 750, 800])
         targets, preds = torch.tensor(batch, var, lev, lat, lon), torch.tensor(batch, var, lev, lat, lon)
         metric.update(targets, preds)
-        xr_dataset = metric.compute()  # EnsembleMetrics returns {"mse": torch.tensor(var, lev) }
+        xr_dataset = metric.compute()  # EnsembleMetrics internally returns {"mse": torch.tensor(var, lev) }
 
     Args:
         metric: base metric that should be wrapped. It is assumed that the metric outputs a
             dict mapping metric name to tensors that have shape (dim1, dim2, ...).
-        coord_names: Names of the dimensions returned by metric (same order as tensor shape and `coords`).
-        coords: Values for the dimensions returned by metric (same order as tensor shape and `coord_names`).
-        return_raw_dict: Whether to also return the raw output from the metrics (along with the labelled dict).
+        dims: Names of the dimensions returned by metric (same order as tensor shape and `coords`).
+        coords: Values for the dimensions returned by metric (same order as tensor shape and `dims`).
     """
 
     def __init__(
         self,
         metric: Metric,
-        coord_names: Sequence[str],
+        dims: Sequence[str],
         coords: Sequence[Sequence],
-        return_raw_dict: bool = False,
     ):
         super().__init__()
         if not isinstance(metric, Metric):
             raise ValueError(
-                f"Expected argument `metric` to be an instance of `torchmetrics.Metric` but got {metric}"
+                f"Expected argument `metric` to be an instance of `torchmetrics.Metric` but got {metric}."
+            )
+        if "variable" not in dims:
+            raise ValueError(
+                "One dimension needs to be named 'variable'. It will be used as variable in xarray dataset."
             )
         self.metric = metric
-        self.coord_names = coord_names
+        self.dims = dims
         self.coords = coords
-        self.return_raw_dict = return_raw_dict
 
-    def _convert(self, raw_metric_dict: dict[str, torch.tensor]):
+    def _convert(self, metric_dict: dict[str, torch.tensor]) -> xr.Dataset:
         ds = xr.Dataset(
-            data_vars={metric: (self.coord_names, val) for metric, val in raw_metric_dict.items()},
-            coords={coord_name: coord for coord_name, coord in zip(self.coord_names, self.coords)},
+            data_vars={metric: (self.dims, val) for metric, val in metric_dict.items()},
+            coords={dim: coord for dim, coord in zip(self.dims, self.coords)},
         )
+        ds = ds.to_array(dim="metric")  # Stack metrics into new dim.
+        ds = ds.to_dataset(dim="variable")  # Split into separate variables along var dimension.
         return ds
 
     def update(self, *args: Any, **kwargs: Any) -> None:
         self.metric.update(*args, **kwargs)
 
     def compute(self) -> dict[str, torch.tensor]:
-        raw_metric_dict = self.metric.compute()
-        if self.return_raw_dict:
-            return raw_metric_dict, self._convert(raw_metric_dict)
-        else:
-            return self._convert(raw_metric_dict)
+        return self._convert(self.metric.compute())
