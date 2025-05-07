@@ -24,10 +24,10 @@ parser.add_argument(
     "--years",
     nargs="+",  # Accepts 1 or more arguments as a list.
     type=int,
-    default=list(range(1979, 2022)),
+    default=list(range(1979, 2024)),
     help="Year(s) to download. By default downloads all 1979-2021.",
 )
-parser.add_argument("--years", default="", type=str, help="year to download")
+
 parser.add_argument("--clim", action="store_true", help="whether to download climatology")
 
 args = parser.parse_args()
@@ -42,6 +42,7 @@ if not clim_tgt.exists() and (args.clim or not args.years):
 
 for year in args.years:
     for hour in (0, 6, 12, 18):
+        print(year, hour)
         fname = Path(args.folder) / f"era5_240_{year}_{hour}h.nc"
         if Path(fname).exists() and os.stat(fname).st_size < 4580000000:
             os.remove(fname)  # file is corrupted
