@@ -14,17 +14,19 @@ from .netcdf import XarrayDataset
 
 filename_filters = dict(
     all=(lambda _: True),
-    last_train=lambda x: ("2018" in x),
+    last_train=lambda x: ("1990" in x),
     last_train_z0012=lambda x: ("2018" in x and ("0h" in x or "12h" in x)),
-    train=lambda x: not ("2019" in x or "2020" in x or "2021" in x),
+    train=lambda x: not ("2000" in x or "2001" in x or "2021" in x),
     # Splits val and test  are from 2019 and 2020 respectively, but
     # we read the years before and after to account for offsets when
     # loading previous and future timestamps for an example.
-    val=lambda x: ("2018" in x or "2019" in x or "2020" in x),
-    test=lambda x: ("2019" in x or "2020" in x or "2021" in x),
-    test_z0012=lambda x: ("2019" in x or "2020" in x or "2021" in x) and ("0h" in x or "12h" in x),
-    test2022_z0012=lambda x: ("2022" in x) and ("0h" in x or "12h" in x),  # check if that works ?
-    recent2=lambda x: any([str(y) in x for y in range(2007, 2019)]),
+    val=lambda x: ("2000" in x or "2019" in x or "2020" in x),
+    test=lambda x: ("2001" in x or "2020" in x or "2021" in x),
+    test_z0012=lambda x: ("2019" in x or "2020" in x or "2021" in x)
+    and ("0h" in x or "12h" in x),
+    test2022_z0012=lambda x: ("2022" in x)
+    and ("0h" in x or "12h" in x),  # check if that works ?
+    recent2=lambda x: any([str(y) in x for y in range(1950, 2019)]),
     empty=lambda x: False,
 )
 
@@ -69,7 +71,9 @@ def get_surface_variable_indices(variables=surface_variables):
     return {surface_variables_short[var]: (i, 0) for i, var in enumerate(variables)}
 
 
-def get_level_variable_indices(pressure_levels=pressure_levels, variables=level_variables):
+def get_level_variable_indices(
+    pressure_levels=pressure_levels, variables=level_variables
+):
     """Mapping from level variable name to (var, lev) index in ERA5 dataset."""
     out = {}
     for var_idx, var in enumerate(variables):
@@ -84,7 +88,9 @@ def get_headline_level_variable_indices(
 ):
     """Mapping for main level variables."""
     out = get_level_variable_indices(pressure_levels, level_variables)
-    return {k: v for k, v in out.items() if k in ("Z500", "T850", "Q700", "U850", "V850")}
+    return {
+        k: v for k, v in out.items() if k in ("Z500", "T850", "Q700", "U850", "V850")
+    }
 
 
 class Era5Dataset(XarrayDataset):
@@ -116,6 +122,9 @@ class Era5Dataset(XarrayDataset):
         """
         if filename_filter is None:
             filename_filter = filename_filters[domain]
+            print(f"Used default filename_filter: {domain}")
+        else:
+            print("Filename filter used")
 
         if variables is None:
             variables = dict(surface=surface_variables, level=level_variables)
@@ -213,12 +222,17 @@ class Era5Dataset(XarrayDataset):
         step_iterations = preds_future.shape[1]
 
         xr_timedelta_list = [
-            self.convert_to_xarray(preds_future[:, i], timestamp=timestamp, levels=levels)
+            self.convert_to_xarray(
+                preds_future[:, i], timestamp=timestamp, levels=levels
+            )
             for i in range(step_iterations)
         ]
-        prediction_timedeltas = [timedelta(days=i) for i in range(1, step_iterations + 1)]
+        prediction_timedeltas = [
+            timedelta(days=i) for i in range(1, step_iterations + 1)
+        ]
         merged_xr_dataset = xr.concat(
-            xr_timedelta_list, pd.Index(prediction_timedeltas, name="prediction_timedelta")
+            xr_timedelta_list,
+            pd.Index(prediction_timedeltas, name="prediction_timedelta"),
         )
         return merged_xr_dataset
 
@@ -277,7 +291,7 @@ class Era5Forecast(Era5Dataset):
 
         if domain in ("val", "test", "test_z0012"):
             # re-select timestamps
-            year = 2019 if domain.startswith("val") else 2020
+            year = 2000 if domain.startswith("val") else 2001
             start_time = np.datetime64(f"{year}-01-01T00:00:00")
             if self.load_prev:
                 start_time = start_time - self.lead_time_hours * np.timedelta64(1, "h")
@@ -338,7 +352,9 @@ class Era5Forecast(Era5Dataset):
 
         out["state"] = super().__getitem__(i)
 
-        out["lead_time_hours"] = torch.tensor(self.lead_time_hours * int(self.multistep)).int()
+        out["lead_time_hours"] = torch.tensor(
+            self.lead_time_hours * int(self.multistep)
+        ).int()
 
         # next obsi. has function of
         T = self.lead_time_hours  # multistep
@@ -354,15 +370,17 @@ class Era5Forecast(Era5Dataset):
             out["future_states"] = torch.stack(future_states, dim=0)
 
         if self.load_prev:
-            out["prev_state"] = super().__getitem__(i - self.lead_time_hours // self.timedelta)
+            out["prev_state"] = super().__getitem__(
+                i - self.lead_time_hours // self.timedelta
+            )
 
         if self.load_clim:
             clim_xr = xr.open_dataset(self.clim_path)
             timestamp = self.id2pt[i][2]
             doy = np.datetime64(timestamp, "D") - np.datetime64(timestamp, "Y") + 1
-            hour = (timestamp.astype("datetime64[h]") - timestamp.astype("datetime64[D]")).astype(
-                int
-            ) % 24
+            hour = (
+                timestamp.astype("datetime64[h]") - timestamp.astype("datetime64[D]")
+            ).astype(int) % 24
             climi = clim_xr.sel(dayofyear=doy.astype("int"), hour=hour)
             out["clim_state"] = self.convert_to_tensordict(climi)
             clim_xr.close()
@@ -406,7 +424,9 @@ class Era5Forecast(Era5Dataset):
             start_time = np.datetime64("2007-01-01T00:00:00")
             end_time = np.datetime64("2019-01-01T00:00:00")
 
-            delta_start = int(self.load_prev) * self.lead_time_hours * np.timedelta64(1, "h")
+            delta_start = (
+                int(self.load_prev) * self.lead_time_hours * np.timedelta64(1, "h")
+            )
             delta_end = self.multistep * self.lead_time_hours * np.timedelta64(1, "h")
 
             super().set_timestamp_bounds(start_time - delta_start, end_time + delta_end)
