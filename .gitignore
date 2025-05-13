@@ -3,6 +3,7 @@
 outputs  
 lightning_logs
 .DS_Store
+wandblogs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

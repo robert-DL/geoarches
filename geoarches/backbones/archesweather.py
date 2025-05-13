@@ -156,7 +156,6 @@ class WeatherEncodeDecodeLayer(nn.Module):
             level = torch.cat([level, cond_level], dim=1)
 
         level = self.level_padder(level)
-        print(f"Before projection: surface {surface.shape} level {level.shape}")
         if self.edge_index is not None:
             shp = surface.shape
             surface = torch.reshape(
@@ -167,13 +166,10 @@ class WeatherEncodeDecodeLayer(nn.Module):
             level = torch.reshape(
                 level, (lshp[0], lshp[3] * lshp[4], lshp[1] * lshp[2])
             )
-            print(f"Before gnn: surface {surface.shape} level {level.shape}")
             surface = self.surface_proj(surface, self.edge_index)
             level = self.level_proj(level, self.edge_index)
-            print(f"After gnn: surface {surface.shape} level {level.shape}")
 
             surface = torch.reshape(surface, (shp[0], -1, shp[2] // 2, shp[3] // 2))
-            print(f"After gnn: surface {surface.shape} level {level.shape}")
             level = torch.reshape(
                 level,
                 (
@@ -187,13 +183,11 @@ class WeatherEncodeDecodeLayer(nn.Module):
         else:
             surface = self.surface_proj(surface)
             level = self.level_proj(self.level_padder(level))
-        print(f"After projection: surface {surface.shape} level {level.shape}")
         x = torch.concat([surface.unsqueeze(2), level], dim=2)
         return x
 
     def decode(self, x):
         surface, level = x[:, :, 0], x[:, :, 1:]
-        print(f"Before deconv: surface {surface.shape} level {level.shape}")
         output_surface = self.surface_deconv(surface)
         output_surface = self.pixelshuffle(output_surface)
         output_surface = output_surface.unsqueeze(-3)
@@ -208,9 +202,6 @@ class WeatherEncodeDecodeLayer(nn.Module):
         output_level = output_level.reshape(
             -1, self.img_size[0], *output_level.shape[1:]
         ).movedim(1, -3)
-        print(
-            f"After deconv: surface {output_surface.shape} level {output_level.shape}"
-        )
 
         if self.final_interpolation:
             bs = output_surface.shape[0]
