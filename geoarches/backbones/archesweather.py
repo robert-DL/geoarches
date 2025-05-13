@@ -9,7 +9,8 @@ from tensordict.tensordict import TensorDict
 from timm.layers.mlp import SwiGLU
 
 import geoarches.stats as geoarches_stats
-from geoarches.backbones.archesweather_layers import ICNR_init
+from geoarches.backbones.archesweather_layers import ICNR_init, GCNLayer
+from geoarches.utils.graph_utils import create_2d_mesh_edges
 
 from .archesweather_layers import (
     CondBasicLayer,
@@ -35,6 +36,7 @@ class WeatherEncodeDecodeLayer(nn.Module):
         level_ch=6,
         n_concatenated_states=0,
         final_interpolation=False,
+        proj_layer="gnn",  # "gnn"
     ) -> None:
         super().__init__()
         self.__dict__.update(locals())
@@ -47,27 +49,46 @@ class WeatherEncodeDecodeLayer(nn.Module):
 
         surface_ch_in = constant_dims + surface_ch + n_concatenated_states * surface_ch
         level_ch_in = level_ch + n_concatenated_states * level_ch
+        print(f"input channels: surf {surface_ch_in} level {level_ch_in}")
+        if proj_layer == "conv":
+            if torch.backends.mps.is_available():
+                from .archesweather_layers import Conv3dSimple
 
-        if torch.backends.mps.is_available():
-            from .archesweather_layers import Conv3dSimple
-
-            self.level_proj = Conv3dSimple(
-                level_ch_in, emb_dim, kernel_size=patch_size, stride=patch_size
+                self.level_proj = Conv3dSimple(
+                    level_ch_in, emb_dim, kernel_size=patch_size, stride=patch_size
+                )
+            else:
+                self.level_proj = nn.Conv3d(
+                    level_ch_in, emb_dim, kernel_size=patch_size, stride=patch_size
+                )
+            self.surface_proj = nn.Conv2d(
+                surface_ch_in,
+                emb_dim,
+                kernel_size=patch_size[1:],
+                stride=patch_size[1:],
             )
+
+            self.edge_index = None
+        elif proj_layer == "gnn":
+            self.edge_index = create_2d_mesh_edges(img_size[1] - 1, img_size[2])
+
+            self.surface_proj = GCNLayer(emb_dim // 4, surface_ch_in)
+            self.level_proj = GCNLayer(
+                (emb_dim // 8) * (img_size[0] + 1),
+                level_ch_in * (img_size[0] + 1),
+            )
+
+            # self.surface_deconv = GCNLayer(
+            #     surface_ch * patch_size[-1] ** 2, out_emb_dim
+            # )
+            # self.level_deconv = GCNLayer(
+            #     level_ch * patch_size[-1] ** 2, out_emb_dim // 2
+            # )
         else:
-            self.level_proj = nn.Conv3d(
-                level_ch_in, emb_dim, kernel_size=patch_size, stride=patch_size
-            )
-        self.surface_proj = nn.Conv2d(
-            surface_ch_in, emb_dim, kernel_size=patch_size[1:], stride=patch_size[1:]
-        )
+            raise NotImplementedError(f"Projection layer {proj_layer} is not supported")
 
         l_pad = patch_size[0] - img_size[0] % patch_size[0]
         level_pads = [l_pad // 2, l_pad - l_pad // 2]
-
-        self.level_padder = nn.ZeroPad3d((0, 0, 0, 0, *level_pads))
-
-        # decode layers
 
         self.surface_deconv = nn.Conv2d(
             out_emb_dim,
@@ -85,7 +106,10 @@ class WeatherEncodeDecodeLayer(nn.Module):
             padding=1,
             bias=0,
         )
+
+        self.level_padder = nn.ZeroPad3d((0, 0, 0, 0, *level_pads))
         self.pixelshuffle = nn.PixelShuffle(patch_size[-1])
+
         ICNR_init(
             self.surface_deconv.weight,
             initializer=nn.init.kaiming_normal_,
@@ -105,6 +129,8 @@ class WeatherEncodeDecodeLayer(nn.Module):
         device = state.device
         if self.constant_masks.device != device:
             self.constant_masks = self.constant_masks.to(device)
+        if self.edge_index is not None and self.edge_index.device != device:
+            self.edge_index = self.edge_index.to(device)
 
         # embed
         level = state["level"]
@@ -129,28 +155,61 @@ class WeatherEncodeDecodeLayer(nn.Module):
             surface = torch.cat([surface, cond_surface], dim=1)
             level = torch.cat([level, cond_level], dim=1)
 
-        surface = self.surface_proj(surface)
-        level = self.level_proj(self.level_padder(level))
+        level = self.level_padder(level)
+        print(f"Before projection: surface {surface.shape} level {level.shape}")
+        if self.edge_index is not None:
+            shp = surface.shape
+            surface = torch.reshape(
+                surface, (shp[0], shp[2] * shp[3], shp[1])
+            )  # (Batch, num_nodes, num_channels)
 
+            lshp = level.shape
+            level = torch.reshape(
+                level, (lshp[0], lshp[3] * lshp[4], lshp[1] * lshp[2])
+            )
+            print(f"Before gnn: surface {surface.shape} level {level.shape}")
+            surface = self.surface_proj(surface, self.edge_index)
+            level = self.level_proj(level, self.edge_index)
+            print(f"After gnn: surface {surface.shape} level {level.shape}")
+
+            surface = torch.reshape(surface, (shp[0], -1, shp[2] // 2, shp[3] // 2))
+            print(f"After gnn: surface {surface.shape} level {level.shape}")
+            level = torch.reshape(
+                level,
+                (
+                    lshp[0],
+                    -1,
+                    lshp[2] // 2,
+                    lshp[3] // 2,
+                    lshp[4] // 2,
+                ),
+            )
+        else:
+            surface = self.surface_proj(surface)
+            level = self.level_proj(self.level_padder(level))
+        print(f"After projection: surface {surface.shape} level {level.shape}")
         x = torch.concat([surface.unsqueeze(2), level], dim=2)
         return x
 
     def decode(self, x):
         surface, level = x[:, :, 0], x[:, :, 1:]
-
+        print(f"Before deconv: surface {surface.shape} level {level.shape}")
         output_surface = self.surface_deconv(surface)
         output_surface = self.pixelshuffle(output_surface)
         output_surface = output_surface.unsqueeze(-3)
 
-        level = level.reshape(level.shape[0], level.shape[1] // 2, 2, *level.shape[2:]).flatten(
-            2, 3
-        )[:, :, 1:]
+        level = level.reshape(
+            level.shape[0], level.shape[1] // 2, 2, *level.shape[2:]
+        ).flatten(2, 3)[:, :, 1:]
         level = level.movedim(-3, 1).flatten(0, 1)
 
         output_level = self.level_deconv(level)
         output_level = self.pixelshuffle(output_level)
-        output_level = output_level.reshape(-1, self.img_size[0], *output_level.shape[1:]).movedim(
-            1, -3
+        output_level = output_level.reshape(
+            -1, self.img_size[0], *output_level.shape[1:]
+        ).movedim(1, -3)
+        print(
+            f"After deconv: surface {output_surface.shape} level {output_level.shape}"
         )
 
         if self.final_interpolation:
@@ -165,7 +224,9 @@ class WeatherEncodeDecodeLayer(nn.Module):
             output_surface = output_surface.reshape(bs, -1, *output_surface.shape[1:])
         else:
             # put back fake south pole
-            output_surface = torch.cat([output_surface, output_surface[..., -1:, :]], dim=-2)
+            output_surface = torch.cat(
+                [output_surface, output_surface[..., -1:, :]], dim=-2
+            )
             output_level = torch.cat([output_level, output_level[..., -1:, :]], dim=-2)
 
         return TensorDict(
@@ -254,7 +315,10 @@ class ArchesWeatherCondBackbone(nn.Module):
             **kwargs,
         )
         self.upsample = UpSample(
-            emb_dim * 2, emb_dim, (self.zdim, *self.layer2_shape), (self.zdim, *self.layer1_shape)
+            emb_dim * 2,
+            emb_dim,
+            (self.zdim, *self.layer2_shape),
+            (self.zdim, *self.layer1_shape),
         )
         out_dim = emb_dim if not self.use_skip else 2 * emb_dim
         self.layer4 = CondBasicLayer(
@@ -282,7 +346,9 @@ class ArchesWeatherCondBackbone(nn.Module):
         x = self.layer2(x, cond_emb)
 
         if self.gradient_checkpointing:
-            x = gradient_checkpoint.checkpoint(self.layer3, x, cond_emb, use_reentrant=False)
+            x = gradient_checkpoint.checkpoint(
+                self.layer3, x, cond_emb, use_reentrant=False
+            )
         else:
             x = self.layer3(x, cond_emb)
 
@@ -292,6 +358,8 @@ class ArchesWeatherCondBackbone(nn.Module):
         x = self.layer4(x, cond_emb)
 
         output = x
-        output = output.transpose(1, 2).reshape(output.shape[0], -1, 8, *self.layer1_shape)
+        output = output.transpose(1, 2).reshape(
+            output.shape[0], -1, 8, *self.layer1_shape
+        )
 
         return output
