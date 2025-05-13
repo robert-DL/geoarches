@@ -3,6 +3,10 @@
 import torch
 from timm.models.layers import DropPath, trunc_normal_
 from torch import nn
+from torch import Tensor
+from torch.nn import Module, LeakyReLU
+import torch.nn.functional as F
+from torch_geometric.nn import LayerNorm, GraphConv, Linear
 
 from .weatherlearn_utils.crop import crop3d
 from .weatherlearn_utils.earth_position_index import get_earth_position_index
@@ -21,8 +25,12 @@ class Conv3dSimple(nn.Module):
         super().__init__()
         self.kernel_size = kernel_size
         assert stride == kernel_size, "stride must be equal to kernel size"
-        scale = (in_channels * kernel_size[0] * kernel_size[1] * kernel_size[2]) ** -0.5 / 2
-        self.weight = nn.Parameter(torch.randn(out_channels, in_channels, *kernel_size) * scale)
+        scale = (
+            in_channels * kernel_size[0] * kernel_size[1] * kernel_size[2]
+        ) ** -0.5 / 2
+        self.weight = nn.Parameter(
+            torch.randn(out_channels, in_channels, *kernel_size) * scale
+        )
         self.bias = nn.Parameter(torch.randn(out_channels) * scale)
 
     def forward(self, x):
@@ -74,7 +82,9 @@ def ICNR_init(tensor, initializer, upscale_factor=2, *args, **kwargs):  # noqa N
         " is not divisible by square of upscale_factor: "
         f"upscale_factor = {upscale_factor}"
     )
-    sub_kernel = torch.empty(tensor.shape[0] // upscale_factor_squared, *tensor.shape[1:])
+    sub_kernel = torch.empty(
+        tensor.shape[0] // upscale_factor_squared, *tensor.shape[1:]
+    )
     sub_kernel = initializer(sub_kernel, *args, **kwargs)
     new_tensor = sub_kernel.repeat_interleave(upscale_factor_squared, dim=0)
     tensor.data.copy_(new_tensor)
@@ -110,7 +120,9 @@ class UpSample(nn.Module):
         out_pl, out_lat, out_lon = self.output_resolution
 
         x = self.linear1(x)
-        x = x.reshape(B, in_pl, in_lat, in_lon, 2, 2, C // 2).permute(0, 1, 2, 4, 3, 5, 6)
+        x = x.reshape(B, in_pl, in_lat, in_lon, 2, 2, C // 2).permute(
+            0, 1, 2, 4, 3, 5, 6
+        )
         x = x.reshape(B, in_pl, in_lat * 2, in_lon * 2, -1)
 
         assert in_pl == out_pl, "the dimension of pressure level shouldn't change"
@@ -123,7 +135,13 @@ class UpSample(nn.Module):
         pad_left = pad_w // 2
         pad_right = pad_w - pad_left
 
-        x = x[:, :out_pl, pad_top : 2 * in_lat - pad_bottom, pad_left : 2 * in_lon - pad_right, :]
+        x = x[
+            :,
+            :out_pl,
+            pad_top : 2 * in_lat - pad_bottom,
+            pad_left : 2 * in_lon - pad_right,
+            :,
+        ]
         x = x.reshape(x.shape[0], x.shape[1] * x.shape[2] * x.shape[3], x.shape[4])
         x = self.norm(x)
         x = self.linear2(x)
@@ -163,7 +181,9 @@ class DownSample(nn.Module):
 
         pad_front = pad_back = 0
 
-        self.pad = nn.ZeroPad3d((pad_left, pad_right, pad_top, pad_bottom, pad_front, pad_back))
+        self.pad = nn.ZeroPad3d(
+            (pad_left, pad_right, pad_top, pad_bottom, pad_front, pad_back)
+        )
 
     def forward(self, x):
         B, N, C = x.shape
@@ -248,7 +268,9 @@ class EarthAttention3D(nn.Module):
 
         self.earth_position_bias_table = nn.Parameter(
             torch.zeros(
-                (window_size[0] ** 2) * (window_size[1] ** 2) * (window_size[2] * 2 - 1),
+                (window_size[0] ** 2)
+                * (window_size[1] ** 2)
+                * (window_size[2] * 2 - 1),
                 self.type_of_windows,
                 num_heads,
             )
@@ -299,9 +321,9 @@ class EarthAttention3D(nn.Module):
 
         if mask is not None:
             nLon = mask.shape[0]
-            attn = attn.view(B_ // nLon, nLon, self.num_heads, nW_, N, N) + mask.unsqueeze(
-                1
-            ).unsqueeze(0)
+            attn = attn.view(
+                B_ // nLon, nLon, self.num_heads, nW_, N, N
+            ) + mask.unsqueeze(1).unsqueeze(0)
             attn = attn.view(-1, self.num_heads, nW_, N, N)
             attn = self.softmax(attn)
         else:
@@ -408,7 +430,9 @@ class EarthSpecificBlock(nn.Module):
         if axis_attn:
             from axial_attention import AxialAttention, AxialPositionalEmbedding
 
-            self.axis_pos = AxialPositionalEmbedding(dim=dim, shape=(8,), emb_dim_index=-1)
+            self.axis_pos = AxialPositionalEmbedding(
+                dim=dim, shape=(8,), emb_dim_index=-1
+            )
             self.axis_attn = AxialAttention(
                 dim=dim,  # embedding dimension
                 dim_index=-1,  # where is the embedding dimension
@@ -429,7 +453,9 @@ class EarthSpecificBlock(nn.Module):
 
         # first modulation
         if c is not None:
-            shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = c.chunk(6, dim=1)
+            shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = c.chunk(
+                6, dim=1
+            )
             x = x * (1 + scale_msa[:, None, :]) + shift_msa[:, None, :]
 
         x = x.view(B, Pl, Lat, Lon, C)
@@ -441,7 +467,9 @@ class EarthSpecificBlock(nn.Module):
 
         shift_pl, shift_lat, shift_lon = self.shift_size
         if self.roll:
-            shifted_x = torch.roll(x, shifts=(-shift_pl, -shift_lat, -shift_lon), dims=(1, 2, 3))
+            shifted_x = torch.roll(
+                x, shifts=(-shift_pl, -shift_lat, -shift_lon), dims=(1, 2, 3)
+            )
             x_windows = window_partition(shifted_x, self.window_size)
             # B*num_lon, num_pl*num_lat, win_pl, win_lat, win_lon, C
         else:
@@ -464,24 +492,36 @@ class EarthSpecificBlock(nn.Module):
         )
 
         if self.roll:
-            shifted_x = window_reverse(attn_windows, self.window_size, Pl_pad, Lat_pad, Lon_pad)
+            shifted_x = window_reverse(
+                attn_windows, self.window_size, Pl_pad, Lat_pad, Lon_pad
+            )
             # B * Pl * Lat * Lon * C
-            x = torch.roll(shifted_x, shifts=(shift_pl, shift_lat, shift_lon), dims=(1, 2, 3))
+            x = torch.roll(
+                shifted_x, shifts=(shift_pl, shift_lat, shift_lon), dims=(1, 2, 3)
+            )
         else:
-            shifted_x = window_reverse(attn_windows, self.window_size, Pl_pad, Lat_pad, Lon_pad)
+            shifted_x = window_reverse(
+                attn_windows, self.window_size, Pl_pad, Lat_pad, Lon_pad
+            )
             x = shifted_x
 
         # crop, end pad
-        x = crop3d(x.permute(0, 4, 1, 2, 3), self.input_resolution).permute(0, 2, 3, 4, 1)
+        x = crop3d(x.permute(0, 4, 1, 2, 3), self.input_resolution).permute(
+            0, 2, 3, 4, 1
+        )
 
         x = x.reshape(B, Pl * Lat * Lon, C)
 
         # try axial attention here ?
         if hasattr(self, "axis_attn"):
-            x2 = x.reshape(B, Pl, Lat * Lon, C).movedim(2, 1).flatten(0, 1)  # B*Lat*Lon, Pl, C
+            x2 = (
+                x.reshape(B, Pl, Lat * Lon, C).movedim(2, 1).flatten(0, 1)
+            )  # B*Lat*Lon, Pl, C
             x2 = self.axis_pos(x2)
             x2 = self.axis_attn(x2)
-            x2 = x2.reshape(B, Lat * Lon, Pl, C).movedim(1, 2).flatten(1, 2)  # B, Pl*Lat*Lon, C
+            x2 = (
+                x2.reshape(B, Lat * Lon, Pl, C).movedim(1, 2).flatten(1, 2)
+            )  # B, Pl*Lat*Lon, C
 
         if isinstance(dt, torch.Tensor):
             dt = dt[:, :, None]
@@ -496,7 +536,9 @@ class EarthSpecificBlock(nn.Module):
             if hasattr(self, "axis_attn"):
                 x = x + dt * self.drop_path(x2)
             x = shortcut + gate_msa[:, None, :] * self.drop_path(x)
-            mlp_input = self.norm2(x) * (1 + scale_mlp[:, None, :]) + shift_mlp[:, None, :]
+            mlp_input = (
+                self.norm2(x) * (1 + scale_mlp[:, None, :]) + shift_mlp[:, None, :]
+            )
             x = x + self.drop_path(gate_mlp[:, None, :] * self.mlp(mlp_input))
         return x
 
@@ -555,7 +597,9 @@ class BasicLayer(nn.Module):
                     qk_scale=qk_scale,
                     drop=drop,
                     attn_drop=attn_drop,
-                    drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
+                    drop_path=(
+                        drop_path[i] if isinstance(drop_path, list) else drop_path
+                    ),
                     roll_type=(i % 2),  # 1 or 3
                     act_layer=act_layer,
                     mlp_layer=mlp_layer,
@@ -578,7 +622,9 @@ class BasicLayer(nn.Module):
 class CondBasicLayer(BasicLayer):
     def __init__(self, *args, dim=192, cond_dim=32, **kwargs):
         super().__init__(*args, dim=dim, **kwargs)
-        self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(cond_dim, 6 * dim, bias=True))
+        self.adaLN_modulation = nn.Sequential(
+            nn.SiLU(), nn.Linear(cond_dim, 6 * dim, bias=True)
+        )
         nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
         nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
         # init the modulation
@@ -606,7 +652,73 @@ class LinVert(nn.Module):
         )  # B, lat*lon, 8*C
         x2 = self.fc1(x2)
         x2 = (
-            x2.reshape((x2.shape[0], -1, 8, shortcut.shape[-1])).movedim(-2, 1).flatten(1, 2)
+            x2.reshape((x2.shape[0], -1, 8, shortcut.shape[-1]))
+            .movedim(-2, 1)
+            .flatten(1, 2)
         )  # B, 8*lat*lon, C
 
         return shortcut + x2
+
+
+class GCNLayer(Module):
+    """Custom Graph Convolutional Layer.
+
+    This layer implements a graph convolutional layer that allows for an additional batch dimension,
+    unlike standard GCN layers. The design is inspired by the paper from Stanford's GNN design repository:
+    http://snap.stanford.edu/gnn-design/
+
+    It applies linear transformation, layer normalization, activation, and graph convolution in sequence.
+
+    Parameters
+    ----------
+    channels : int
+        The number of output channels for the layer.
+    in_channels : Optional[int], optional
+        The number of input channels. If not provided, it defaults to `channels` (default is None).
+    """
+
+    def __init__(self, channels: int, in_channels: int = None) -> None:
+        super(GCNLayer, self).__init__()
+        if in_channels is None:
+            in_channels = (
+                channels  # Default input channels to output channels if not provided
+            )
+
+        self.act = LeakyReLU(0.1)  # Leaky ReLU activation function
+        self.lin = Linear(in_channels, channels)  # Linear layer to transform input
+        self.norm = LayerNorm(channels)  # Layer normalization
+        self.agr = GraphConv(
+            channels, channels, aggr="mean"
+        )  # Graph convolution layer with mean aggregation
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Reset the parameters of the linear, normalization, and graph convolution layers."""
+        self.agr.reset_parameters()  # Reset parameters of the graph convolution layer
+        self.lin.reset_parameters()  # Reset parameters of the linear layer
+        self.norm.reset_parameters()  # Reset parameters of the normalization layer
+
+    def forward(self, x: Tensor, edge_index: Tensor) -> Tensor:
+        """Forward pass of the GCNLayer.
+
+        Applies a linear transformation, layer normalization, dropout, activation, and
+        graph convolution to the input tensor.
+
+        Parameters
+        ----------
+        x : Tensor
+            Input node features of shape `(batch_size, num_nodes, in_channels)`.
+        edge_index : Tensor
+            Graph connectivity in COO format with shape `(2, num_edges)`.
+
+        Returns
+        -------
+        Tensor
+            Output node features of shape `(batch_size, num_nodes, channels)`.
+        """
+        x = self.lin(x)  # Apply linear transformation
+        x = self.norm(x)  # Apply layer normalization
+        x = F.dropout(x, 0.3, self.training)  # Apply dropout during training
+        x = self.act(x)  # Apply LeakyReLU activation
+        x = self.agr(x, edge_index)  # Apply graph convolution
+        return x
