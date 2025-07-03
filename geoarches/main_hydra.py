@@ -275,8 +275,16 @@ def main(cfg: DictConfig):
     if cfg.mode == "train":
         trainer.fit(pl_module, train_loader, val_loader, ckpt_path=ckpt_path)
     elif cfg.mode == "test":
+        # Check for lightning version
+        state_dict = torch.load(ckpt_path, map_location="cpu") if ckpt_path else None
+        if state_dict and 'pytorch-lightning_version' not in state_dict:
+            pl_module.load_state_dict(state_dict["state_dict"])
+            ckpt_path = None  # don't pass ckpt_path to test if we loaded state_dict directly
+        else:
+            state_dict = None
+
         trainer.test(pl_module, test_loader, ckpt_path=ckpt_path)
 
-
+        
 if __name__ == "__main__":
     main()

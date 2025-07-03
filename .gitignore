@@ -4,6 +4,16 @@ outputs
 lightning_logs
 .DS_Store
 
+
+# Large files in .nc format
+era5-quantiles-2016_2022.nc
+
+# Add softlinks to the .gitignore file
+data
+modelstore
+evalstore
+wandblogs
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
