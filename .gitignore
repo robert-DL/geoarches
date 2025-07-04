@@ -6,7 +6,7 @@ lightning_logs
 
 
 # Large files in .nc format
-era5-quantiles-2016_2022.nc
+era5-quantiles-*.nc
 
 # Add softlinks to the .gitignore file
 data
