@@ -5,6 +5,10 @@ import xarray as xr
 from hydra import compose, initialize
 from omegaconf import OmegaConf
 
+
+# Test for the Era5Forecast and Era5Dataset classes in the geoarches.dataloaders.era5 module.
+# Test uses graphcast normalization scheme.
+
 from geoarches.dataloaders import era5
 
 # Dimension sizes.
@@ -16,6 +20,9 @@ with initialize(version_base=None, config_path="../../geoarches/configs", job_na
     print(OmegaConf.to_yaml(cfg))
 
     OmegaConf.resolve(cfg)
+
+    # Change parameters of cfg.stats.norm_scheme
+    cfg.stats.module.norm_scheme = "graphcast"
 
 
 class TestEra5Forecast:
@@ -67,7 +74,7 @@ class TestEra5Forecast:
             path=str(self.test_dir),
             domain="all",
             return_timestamp=True,
-            levels=range(0, LEVEL),
+            levels=range(0, LEVEL)
         )
         example, timestamp = ds[0]
 
@@ -91,7 +98,7 @@ class TestEra5Forecast:
             lead_time_hours=lead_time_hours,
             load_prev=False,
             load_clim=False,
-            levels=range(0, LEVEL),
+            levels=range(0, LEVEL)
         )
         example = ds[0]
 
@@ -118,7 +125,7 @@ class TestEra5Forecast:
             multistep=multistep,
             load_prev=False,
             load_clim=False,
-            levels=range(0, LEVEL),
+            levels=range(0, LEVEL)
         )
         example = ds[0]
 
@@ -146,7 +153,7 @@ class TestEra5Forecast:
             multistep=multistep,
             load_prev=True,
             load_clim=False,
-            levels=range(0, LEVEL),
+            levels=range(0, LEVEL)
         )
         example = ds[0]
 
@@ -165,7 +172,7 @@ class TestEra5Forecast:
         assert example["prev_state"]["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["prev_state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
 
-    @pytest.mark.parametrize("indexers", [{"level": ("level", [2, 5, 7]), "latitude": ("latitude", slice(None)), "longitude": ("longitude", slice(None)), "time": ("time", slice(None))}])
+    @pytest.mark.parametrize("indexers", [{"level": ("level", [2, 3, 8]), "latitude": ("latitude", slice(None)), "longitude": ("longitude", slice(None)), "time": ("time", slice(None))}])
     def test_dimension_indexers(self, indexers):
         ds = era5.Era5Dataset(path=str(self.test_dir), domain="all", dimension_indexers=indexers, levels=range(0, LEVEL))
         example = ds[0]
