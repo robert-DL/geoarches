@@ -258,6 +258,7 @@ class DiffusionModule(BaseLightningModule):
         num_steps=None,
         disable_tqdm=False,
         scale_input_noise=None,
+        return_det_prediction=False,
         **kwargs,
     ):
         """
@@ -337,6 +338,8 @@ class DiffusionModule(BaseLightningModule):
         elif self.learn_residual == "pred":
             final_state = pred_state + final_state
 
+        if return_det_prediction:
+            return final_state, pred_state
         return final_state
 
     def sample_rollout(
@@ -393,7 +396,7 @@ class DiffusionModule(BaseLightningModule):
         preds_future = torch.stack(preds_future, dim=1)
         return preds_future
 
-    def validation_step(self, batch, batch_nb):
+    def validation_step(self, batch, batch_nb, dataloaders=None):
         # for the validation, we make some generations and log them
         val_num_members = self.cfg.val.num_members
         val_rollout_iterations = self.cfg.val.metrics_kwargs.rollout_iterations
@@ -407,14 +410,21 @@ class DiffusionModule(BaseLightningModule):
             )
             for j in tqdm(range(val_num_members))
         ]
-        denormalize = self.trainer.val_dataloaders.dataset.denormalize
+
+        if dataloaders is not None:
+            denormalize = dataloaders.dataset.denormalize
+        else:
+            denormalize = self.trainer.val_dataloaders.dataset.denormalize
 
         for metric in self.val_metrics:
             metric.update(
                 denormalize(batch["future_states"][:, :val_rollout_iterations]),
                 [denormalize(sample) for sample in samples],
             )
-        self.validation_samples[batch_nb] = [samples[0][:, 0], samples[1][:, 0]]
+        self.validation_samples[batch_nb] = [
+            samples[0][:, 0],
+            samples[1][:, 0],
+        ]  # just save the first member and first iteration for visualization
 
     def on_validation_epoch_end(self):
         for metric in self.val_metrics:

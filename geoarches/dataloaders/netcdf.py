@@ -10,7 +10,7 @@ import xarray as xr
 from tensordict.tensordict import TensorDict
 from tqdm import tqdm
 
-from geoarches.dataloaders import nan_util
+from geoarches.dataloaders import util
 from geoarches.utils.tensordict_utils import tensordict_apply
 
 # Appropriate xarray engine for a given file extension
@@ -71,7 +71,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         warning_on_nan: bool = True,
         limit_examples: int | None = None,
         force_rebuild_index: bool = False,
-        interpolate_nans: nan_util.NanInterpolationMethod | None = None,
+        interpolate_nans: util.NanInterpolationMethod | None = None,
     ):
         """Initializes.
 
@@ -105,10 +105,10 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         self.return_timestamp = return_timestamp
         self.warning_on_nan = warning_on_nan
-        if interpolate_nans and interpolate_nans not in list(nan_util.NanInterpolationMethod):
+        if interpolate_nans and interpolate_nans not in list(util.NanInterpolationMethod):
             raise ValueError(
                 f"Invalid interpolate_nans: {interpolate_nans}. "
-                f"Valid options are: {list(nan_util.NanInterpolationMethod)}"
+                f"Valid options are: {list(util.NanInterpolationMethod)}"
             )
         self.interpolate_nans = interpolate_nans
 
@@ -264,12 +264,12 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         return tdict
 
-    def select_from_nptime(self, nptime: np.datetime64) -> Tuple[str, int]:
+    def select_from_nptime(self, nptime: np.datetime64, return_timestamp=False) -> Tuple[str, int]:
         """Get file name and line id for a given timestamp string."""
         if nptime not in self.nptime_to_loc_info:
             raise ValueError(f"Timestamp {nptime} not found in dataset.")
         idx = self.nptime_to_loc_info[nptime]["dataset_index"]
-        return self[idx]
+        return self.__getitem__(idx, return_timestamp=return_timestamp)
 
     def __getitem__(
         self,
@@ -300,10 +300,10 @@ class XarrayDataset(torch.utils.data.Dataset):
             tdict_before_interpolation = self.convert_to_tensordict(obsi)
             nan_mask = tensordict_apply(torch.isnan, tdict_before_interpolation)
 
-        obsi = nan_util.pre_norm_interpolate_nans(obsi, interpolate_nans)
+        obsi = util.pre_norm_interpolate_nans(obsi, interpolate_nans)
         tdict = self.convert_to_tensordict(obsi)
 
-        if warning_on_nan and interpolate_nans != nan_util.NanInterpolationMethod.NONE:
+        if warning_on_nan and interpolate_nans != util.NanInterpolationMethod.NONE:
             if any([x.isnan().any().item() for x in tdict.values()]):
                 warnings.warn(f"NaN values detected in {fname} {line_id}")
 

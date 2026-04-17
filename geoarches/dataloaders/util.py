@@ -2,11 +2,25 @@
 
 import enum
 
+import pandas as pd
 import tensordict
 import torch
 import xarray as xr
 
 from geoarches.utils.tensordict_utils import tensordict_apply
+
+
+def datetime_to_time_info(datetime: str) -> dict[str, int]:
+    """Converts a timestamp string to a dictionary of time information."""
+    # Example timestamp: "2020-01-01T00:00:00Z"
+
+    timestamp = pd.Timestamp(datetime)
+    info = {}
+    info["hour_of_day"] = torch.tensor(timestamp.hour)
+    info["day_of_month"] = torch.tensor(timestamp.day)
+    info["day_of_year"] = torch.tensor(timestamp.dayofyear)
+    info["month"] = torch.tensor(timestamp.month)
+    return info
 
 
 class NanInterpolationMethod(str, enum.Enum):

@@ -11,7 +11,7 @@ import xarray as xr
 from hydra.utils import instantiate
 from tensordict.tensordict import TensorDict
 
-from geoarches.dataloaders import nan_util, netcdf
+from geoarches.dataloaders import netcdf, util
 from geoarches.dataloaders.netcdf import XarrayDataset
 from geoarches.utils.normalization import NormalizationStatistics
 from geoarches.utils.tensordict_utils import tensordict_apply
@@ -47,6 +47,9 @@ filename_filters = dict(
     aimip_rollout_z00=lambda x: any(str(y) in x for y in range(1978, 2025)) and ("0h" in x),
     aimip_rollout_z0012=lambda x: any(str(y) in x for y in range(1978, 2025))
     and ("0h" in x or "12h" in x),
+    aimip_train_0h=lambda x: any(str(y) in x for y in range(1979, 2014)) and ("0h" in x),
+    aimip_val_0h=lambda x: ("2013" in x or "2014" in x or "2015" in x) and ("0h" in x),
+    aimip_test_0h=lambda x: ("2016" in x or "2017" in x or "2018" in x) and ("0h" in x),
 )
 
 # we will deprecate filename_filters and use timestamp bounds instead.
@@ -135,6 +138,16 @@ domain_time_info = {
         end_time="2024-12-31T18:00:00",
         timedelta=12,
     ),
+    "aimip_train_0h": DomainTimeInfo(
+        start_time="1979-01-01T00:00:00",
+        end_time="2013-12-31T00:00:00",
+        timedelta=24,
+    ),
+    "aimip_test_0h": DomainTimeInfo(
+        start_time="2016-01-01T00:00:00",
+        end_time="2018-12-31T00:00:00",
+        timedelta=24,
+    ),
 }
 
 
@@ -217,7 +230,7 @@ class Era5Dataset(XarrayDataset):
         set_timestamp_bounds: bool = True,
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
-        interpolate_nans: nan_util.NanInterpolationMethod | None = None,
+        interpolate_nans: util.NanInterpolationMethod | None = None,
     ):
         """Args:
 
@@ -430,13 +443,14 @@ class Era5Forecast(Era5Dataset):
         forcing_vars: List[str] | None = None,
         dimension_indexers: Dict[str, Any] = default_dimension_indexers,
         lead_time_hours: int = 24,
+        pred_lead_time_hours: int | None = None,
         multistep: int = 1,
         load_prev: bool = True,
         load_clim: bool = False,
         switch_recent_data_after_steps: int = 250000,
         warning_on_nan: bool = True,
-        interpolate_input: nan_util.NanInterpolationMethod | None = None,
-        interpolate_target: nan_util.NanInterpolationMethod | None = None,
+        interpolate_input: util.NanInterpolationMethod | None = None,
+        interpolate_target: util.NanInterpolationMethod | None = None,
         set_timestamp_bounds: bool = True,
     ):
         """
@@ -469,6 +483,9 @@ class Era5Forecast(Era5Dataset):
             set_timestamp_bounds: Whether to set timestamp bounds based on domain.
         """
         self.lead_time_hours = lead_time_hours
+        if pred_lead_time_hours is None:
+            pred_lead_time_hours = lead_time_hours
+        self.pred_lead_time_hours = pred_lead_time_hours
         self.multistep = multistep
         self.load_prev = load_prev
         self.load_clim = load_clim
@@ -510,9 +527,11 @@ class Era5Forecast(Era5Dataset):
             raise ValueError(
                 "Either set_timestamp_bounds must be True or timedelta_hours must be set manually."
             )
+
         if set_timestamp_bounds:
+            T = self._effective_lead_time_hours
             start_time, end_time, tdelta = compute_timestamp_bounds(
-                domain, self.multistep, self.lead_time_hours, self.load_prev
+                domain, self.multistep, T, self.load_prev
             )
 
             self.set_timestamp_bounds(start_time, end_time)
@@ -564,10 +583,24 @@ class Era5Forecast(Era5Dataset):
         # Load climatology.
         self.clim_path = Path(path).parent.joinpath("era5_240_clim.nc")
 
+    @property
+    def _effective_lead_time_hours(self) -> int:
+        """Return the lead-time used for index/offset calculations.
+
+        When ``pred_lead_time_hours`` differs from ``lead_time_hours`` (i.e. the
+        model predicts at a coarser cadence than the input timestep) the
+        *prediction* lead-time governs how many steps are consumed per example.
+        """
+        return (
+            self.lead_time_hours
+            if self.pred_lead_time_hours == self.lead_time_hours
+            else self.pred_lead_time_hours
+        )
+
     def __len__(self):
         # Take into account previous and/or future timestamps loaded for one example.
         offset = self.multistep + self.load_prev
-        return super().__len__() - offset * self.lead_time_hours // self.timedelta
+        return super().__len__() - offset * self._effective_lead_time_hours // self.timedelta
 
     def __getitem__(self, i, normalize=True):
         out = {}
@@ -582,21 +615,17 @@ class Era5Forecast(Era5Dataset):
             dtype=torch.int64,
         )
         timestamp = pd.Timestamp(datetime)
-        out["hour_of_day"] = torch.tensor(timestamp.hour)
-        out["day_of_month"] = torch.tensor(timestamp.day)
-        out["day_of_year"] = torch.tensor(timestamp.dayofyear)
-        out["month"] = torch.tensor(timestamp.month)
-
+        info = util.datetime_to_time_info(datetime)
+        out.update(info)
         out["state"], out["nan_mask"] = super().__getitem__(
             i,
             return_nan_mask=True,
             interpolate_nans=self.interpolate_input,
         )
 
-        out["lead_time_hours"] = torch.tensor(self.lead_time_hours).int()
-
         # next obsi. has function of
-        T = self.lead_time_hours  # multistep
+        T = self._effective_lead_time_hours
+        out["lead_time_hours"] = torch.tensor(T, dtype=torch.int64)
 
         if self.multistep > 0:
             out["next_state"] = super().__getitem__(
@@ -641,14 +670,10 @@ class Era5Forecast(Era5Dataset):
         # Optionally, interpolate NaNs in the output after normalization.
         for state in ["prev_state", "state", "forcings"]:
             if state in out:
-                out[state] = nan_util.post_norm_interpolate_nans(
-                    out[state], self.interpolate_input
-                )
+                out[state] = util.post_norm_interpolate_nans(out[state], self.interpolate_input)
         for state in ["next_state", "future_states"]:
             if state in out:
-                out[state] = nan_util.post_norm_interpolate_nans(
-                    out[state], self.interpolate_target
-                )
+                out[state] = util.post_norm_interpolate_nans(out[state], self.interpolate_target)
 
         return out
 
@@ -665,7 +690,7 @@ class Era5Forecast(Era5Dataset):
                 str(t.astype("datetime64[M]")): i for i, t in enumerate(timestamp_values)
             }
 
-        next_timestamp = timestamp + np.timedelta64(self.lead_time_hours, "h")
+        next_timestamp = timestamp + np.timedelta64(self._effective_lead_time_hours, "h")
         first_day_of_month = next_timestamp.astype("datetime64[M]")
         if str(first_day_of_month) not in self.forcings_ds.timestamp_to_idx:
             raise ValueError(

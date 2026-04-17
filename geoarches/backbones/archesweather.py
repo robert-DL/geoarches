@@ -42,7 +42,7 @@ class WeatherEncodeDecodeLayer(nn.Module):
         forcings_ch=0,
         n_concatenated_states=0,
         final_interpolation=False,
-        circular_padding=False,
+        padding_mode="zeros",
         forcings_embedding: ForcingsEmbedding | str | None = None,
         auto_move_to_device=True,
         constant_mask_file="archesweather_constant_masks",
@@ -101,8 +101,14 @@ class WeatherEncodeDecodeLayer(nn.Module):
         self.level_padder = nn.ZeroPad3d((0, 0, 0, 0, *level_pads))
 
         # decode layers
-        if circular_padding:
+        self.padding_mode = padding_mode
+        if padding_mode == "circular":
             pad_args = dict(padding="same", padding_mode="circular")
+        elif padding_mode == "latlon":
+            # Use reflective padding in the latitude dimension and circular padding in the longitude dimension.
+            pad_args = {}
+            self.reflective_padder = {"pad": (0, 0, 1, 1, 0, 0), "mode": "replicate"}
+            self.circular_padder = {"pad": (1, 1, 0, 0, 0, 0), "mode": "circular"}
         else:
             pad_args = dict(padding=1, padding_mode="zeros")
 
@@ -167,7 +173,6 @@ class WeatherEncodeDecodeLayer(nn.Module):
         constant = self.constant_masks[None, :, 0].expand((bs, -1, -1, -1))
 
         surface = torch.cat([surface, constant], dim=1)
-
         if cond_state is not None:
             cond_surface = cond_state["surface"].squeeze(-3)
             cond_level = cond_state["level"]
@@ -184,6 +189,12 @@ class WeatherEncodeDecodeLayer(nn.Module):
             forcings = forcings[..., :-1, :]
         if self.forcings_embedding == ForcingsEmbedding.SURFACE:
             surface = torch.cat([surface, forcings], dim=1)
+
+        if self.padding_mode == "latlon":
+            surface = F.pad(surface, **self.reflective_padder)
+            surface = F.pad(surface, **self.circular_padder)
+            level = F.pad(level, **self.reflective_padder)
+            level = F.pad(level, **self.circular_padder)
 
         surface = self.surface_proj(surface)
         level = self.level_proj(self.level_padder(level))
@@ -203,6 +214,11 @@ class WeatherEncodeDecodeLayer(nn.Module):
         else:
             surface, level = x[:, :, 0], x[:, :, 1:]
 
+        if self.padding_mode == "latlon":
+            surface = F.pad(surface, **self.reflective_padder)
+            surface = F.pad(surface, **self.circular_padder)
+            level = F.pad(level, **self.reflective_padder)
+            level = F.pad(level, **self.circular_padder)
         output_surface = self.surface_deconv(surface)
         output_surface = self.pixelshuffle(output_surface)
         output_surface = output_surface.unsqueeze(-3)

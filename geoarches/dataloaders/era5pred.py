@@ -1,6 +1,7 @@
 import numpy as np
+import torch
 
-from geoarches.dataloaders import era5, nan_util
+from geoarches.dataloaders import era5, util
 
 
 class Era5ForecastWithPrediction(era5.Era5Forecast):
@@ -15,13 +16,14 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         domain="train",
         filename_filter=None,
         lead_time_hours=24,
+        pred_lead_time_hours=None,
         pred_path: str | None = None,
         load_prev=False,
         load_hard_neg=False,
         variables=None,
-        dimension_indexers=None,
-        pred_dimension_indexers=None,
-        interpolate_input: nan_util.NanInterpolationMethod | None = None,
+        dimension_indexers={},
+        pred_dimension_indexers={},
+        interpolate_input: util.NanInterpolationMethod | None = None,
         **kwargs,
     ):
         """Args:
@@ -55,8 +57,10 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
             variables=variables,
             dimension_indexers=dimension_indexers,
             interpolate_input=interpolate_input,
+            pred_lead_time_hours=pred_lead_time_hours,
             **kwargs,
         )
+
         self.load_prev = load_prev
         self.load_hard_neg = load_hard_neg
         self.interpolate_input = interpolate_input
@@ -65,7 +69,7 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
             self.pred_ds = era5.Era5Dataset(
                 path=pred_path,
                 domain="all",
-                dimension_indexers=dimension_indexers | pred_dimension_indexers,
+                dimension_indexers=dict(dimension_indexers) | dict(pred_dimension_indexers),
                 filename_filter=self.filename_filter,
                 variables=self.variables,
                 interpolate_nans=interpolate_input,
@@ -85,13 +89,39 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         out = super().__getitem__(i)
 
         if hasattr(self, "pred_ds"):
-            nptime = np.datetime64(out["timestamp"].int().item(), "s")
-            pred_state = self.pred_ds.select_from_nptime(nptime)
+            state_time = np.datetime64(out["timestamp"].int().item(), "s")
+            pred_time = state_time + np.timedelta64(self.pred_lead_time_hours, "h")
+            # check that pred_time is within bounds of pred_ds timestamps
+            if (
+                pred_time < self.pred_ds.timestamps[0][-1]
+                or pred_time > self.pred_ds.timestamps[-1][-1]
+            ):
+                raise IndexError(
+                    f"Prediction timestamp {pred_time} out of bounds for pred_ds timestamps {self.pred_ds.timestamps[0][-1]} to {self.pred_ds.timestamps[-1][-1]}"
+                )
+
+            # The target timestamp for the prediction is pred_lead_time_hours
+            # ahead of the timestamp
+            pred_state, timestamp = self.pred_ds.select_from_nptime(
+                pred_time, return_timestamp=True
+            )
+            print(
+                f"Selected pred_time {pred_time} "
+                f"for state_time {state_time} with "
+                f"timestamp {timestamp}"
+            )
             normalized_pred_state = self.normalize(pred_state)
             # Interpolate Nans after normalize (ie. if filling with zeros).
-            out["pred_state"] = nan_util.post_norm_interpolate_nans(
+            out["pred_state"] = util.post_norm_interpolate_nans(
                 normalized_pred_state, self.interpolate_input
             )
+
+            if self.pred_lead_time_hours != self.lead_time_hours:
+                print(
+                    f"Changed lead_time_hours from {self.lead_time_hours}"
+                    f" to {self.pred_lead_time_hours}"
+                )
+                out["lead_time_hours"] = torch.tensor(self.pred_lead_time_hours)
 
         if self.load_hard_neg and load_hard_neg:
             rb = 2 * np.random.randint(2) - 1
