@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=AWGen-unforced-3day-v2
+#SBATCH --job-name=AWGen-unforced-3day-v3
 #SBATCH --account=bk1450
 #SBATCH --qos=normal
 #SBATCH --partition=gpu

@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=encode_dataset-hour12
+#SBATCH --job-name=encode_dataset-hour18-v2
 #SBATCH --account=bk1450
 #SBATCH --qos=normal
 #SBATCH --partition=gpu
@@ -31,7 +31,7 @@ uid2="modelstore/AWM2-aimip_default-unforced"
 uid3="modelstore/AWM11-aimip_default-unforced"
 
 srun --cpu-bind=none --mem-bind=none --gpus-per-node=4 --mem=0 --cpus-per-task=8 python3 inference/encode_dataset.py \
-    --target-path="data/output/preds_awm-unforced-0x1x11x42" \
+    --target-path="data/output/preds_awm-0x1x2x11-unforced-v2" \
     --uids=${uid0},${uid1},${uid2},${uid3} \
-    --encode-hours=12 \
+    --encode-hours=18 \
     --forecast-steps=1,3,5,7

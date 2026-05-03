@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=AWM0-aimip_default-padding_latlon
+#SBATCH --job-name=AWM42-aimip_default-latmean
 #SBATCH --account=bk1450
 #SBATCH --qos=normal
 #SBATCH --partition=gpu
@@ -10,7 +10,7 @@
 #SBATCH --exclusive
 #SBATCH --output=logs/%x.%j.out
 #SBATCH --error=logs/%x.%j.err
-#SBATCH --dependency=afterany:22861671
+#SBATCH --dependency=afterany:24549346
 
 . ~/.bashrc
 
@@ -31,14 +31,14 @@ echo "Using ${SLURM_GPUS_PER_NODE} GPUs."
 name=${SLURM_JOB_NAME}
 echo "Experiment Name: ${name}"
 log=True
-seed=0
+seed=42
 save_step_frequency=10000
 cpus_per_task=8
 
 ### DATA ###
 era5_path="data/era5_1x1_daily_averaged/full"
 lead_time_hours=24
-interpolate_input="zero_after_norm"
+interpolate_input="lat_mean_sic_zero"
 interpolate_target="none"
 warning_on_nan=False
 domain="aimip_train"
