@@ -73,6 +73,7 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
                 filename_filter=self.filename_filter,
                 variables=self.variables,
                 interpolate_nans=interpolate_input,
+                warning_on_nan=False,
             )
             # pred_ds should be synchronized with main ds, so we adjust timestamp bounds
             # accordingly.
@@ -105,11 +106,11 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
             pred_state, timestamp = self.pred_ds.select_from_nptime(
                 pred_time, return_timestamp=True
             )
-            print(
-                f"Selected pred_time {pred_time} "
-                f"for state_time {state_time} with "
-                f"timestamp {timestamp}"
-            )
+            # print(
+            #    f"Selected pred_time {pred_time} "
+            #    f"for state_time {state_time} with "
+            #    f"timestamp {timestamp}"
+            # )
             normalized_pred_state = self.normalize(pred_state)
             # Interpolate Nans after normalize (ie. if filling with zeros).
             out["pred_state"] = util.post_norm_interpolate_nans(
@@ -117,10 +118,10 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
             )
 
             if self.pred_lead_time_hours != self.lead_time_hours:
-                print(
-                    f"Changed lead_time_hours from {self.lead_time_hours}"
-                    f" to {self.pred_lead_time_hours}"
-                )
+                # print(
+                #    f"Changed lead_time_hours from {self.lead_time_hours}"
+                #    f" to {self.pred_lead_time_hours}"
+                # )
                 out["lead_time_hours"] = torch.tensor(self.pred_lead_time_hours)
 
         if self.load_hard_neg and load_hard_neg:

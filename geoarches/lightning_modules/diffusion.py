@@ -430,7 +430,6 @@ class DiffusionModule(BaseLightningModule):
         for metric in self.val_metrics:
             scores = metric.compute()
             self.log_dict(scores, sync_dist=True)  # dont put on_epoch = True here
-            print(scores)
             metric.reset()
         self.validation_samples.clear()
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=AWGen-unforced-3day-v3
+#SBATCH --job-name=AWGen-unforced-1day-Masked-v2
 #SBATCH --account=bk1450
 #SBATCH --qos=normal
 #SBATCH --partition=gpu
@@ -10,7 +10,7 @@
 #SBATCH --exclusive
 #SBATCH --output=logs/%x.%j.out
 #SBATCH --error=logs/%x.%j.err
-#SBATCH --dependency=afterany:24247913
+#SBATCH --dependency=afterany:24662173
 
 
 . ~/.bashrc
@@ -40,9 +40,9 @@ cpus_per_task=8
 ### DATA ###
 dataset="era5pred"
 era5_path="data/era5_1x1_daily_averaged/full"
-pred_path="data/output/preds_awm-unforced-0x1x11x42/step03"
+pred_path="data/output/preds_awm-0x1x2x11-unforced-v2/step01"
 lead_time_hours=24
-pred_lead_time_hours=72
+pred_lead_time_hours=24
 interpolate_input="zero_after_norm"
 interpolate_target="none"
 warning_on_nan=False
@@ -63,7 +63,7 @@ norm_file="daily_averaged_aimip_norm_stats.nc"
 variables_surface=[10m_u_component_of_wind,10m_v_component_of_wind,2m_temperature,sea_surface_temperature,mean_sea_level_pressure,sea_ice_cover]
 loss_weight_per_variable_surface=[0.1,0.1,1.0,0.1,0.1,0.1]
 latitude=181
-residual_stats_path="residual_stats_awm-unforced-0x1x11x42_step03.nc"
+residual_stats_path="residual_stats_awm-0x1x2x11-unforced_step01-v2.nc"
 state_normalization="pred"
 
 ### MODEL ###
@@ -84,6 +84,7 @@ depth_multiplier=2
 constant_mask_file="archesweather_constant_masks_1x1"
 padding_mode="circular"
 cond_times=["day_of_year"]
+val_num_members=3
 
 
 srun --cpu-bind=none --mem-bind=none --gpus-per-node=4 --mem=0 --cpus-per-task=8 python3 main_hydra.py \
@@ -132,6 +133,7 @@ srun --cpu-bind=none --mem-bind=none --gpus-per-node=4 --mem=0 --cpus-per-task=8
     ++module.backbone.depth_multiplier=${depth_multiplier} \
     ++module.embedder.forcings_ch=${forcings_ch} \
     ++module.embedder.forcings_embedding=${forcings_embedding} \
+    ++module.val.num_members=${val_num_members} \
     ++dataloader.dataset.forcings_path=${dataloader_dataset_forcings_path} \
     ++dataloader.dataset.forcing_vars=${dataloader_dataset_forcing_vars} \
     ++dataloader.dataset.forcings_stats_path=${dataloader_dataset_forcings_stats_path} 

@@ -84,7 +84,6 @@ class EnsembleMetrics(Metric, MetricBase):
             preds = torch.stack(preds, dim=1)
 
         self.nsamples += preds.shape[0]
-        print(self.nsamples)
         self.nmembers += preds.shape[0] * preds.shape[1]  # Total member predictions
 
         pred_ensemble_mean = preds.mean(1)
@@ -138,7 +137,6 @@ class EnsembleMetrics(Metric, MetricBase):
         # for frmse see
         # https://github.com/google-research/weatherbench2/blob/main/weatherbench2/metrics.py#L500
 
-        print(self.mse)
         metrics = dict(
             mse=self.mse / self.nsamples,
             frmse=(self.mse / self.nsamples - self.var / self.nsamples / nmembers).sqrt(),
