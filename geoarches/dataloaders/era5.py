@@ -50,6 +50,9 @@ filename_filters = dict(
     aimip_train_0h=lambda x: any(str(y) in x for y in range(1979, 2014)) and ("0h" in x),
     aimip_val_0h=lambda x: ("2013" in x or "2014" in x or "2015" in x) and ("0h" in x),
     aimip_test_0h=lambda x: ("2016" in x or "2017" in x or "2018" in x) and ("0h" in x),
+    daily_train=lambda x: any(str(x) in x for y in range(1979, 2014)),
+    daily_val=lambda x: ("2013" in x or "2014" in x or "2015" in x),
+    daily_test=lambda x: ("2016" in x or "2017" in x or "2018" in x) and ("0h" in x),
 )
 
 # we will deprecate filename_filters and use timestamp bounds instead.
@@ -143,6 +146,11 @@ domain_time_info = {
         end_time="2013-12-31T00:00:00",
         timedelta=24,
     ),
+    "aimip_val_0h": DomainTimeInfo(
+        start_time="2014-01-01T00:00:00",
+        end_time="2014-12-31T00:00:00",
+        timedelta=24,
+    ),
     "aimip_test_0h": DomainTimeInfo(
         start_time="2016-01-01T00:00:00",
         end_time="2018-12-31T00:00:00",
@@ -159,7 +167,12 @@ default_dimension_indexers = {
 
 
 def compute_timestamp_bounds(
-    domain: str, multistep: int = 0, lead_time_hours: int = 0, load_prev=False
+    domain: str,
+    multistep: int = 0,
+    lead_time_hours: int = 0,
+    load_prev=False,
+    set_back_by_pred_lead_time=False,
+    pred_lead_time_hours: int | None = None,
 ):
     if domain not in domain_time_info:
         raise ValueError(f"Domain {domain} not found in domain_timestamp_bounds.")
@@ -170,7 +183,11 @@ def compute_timestamp_bounds(
 
     # if allow_overflow, adjust start and end times.
     if time_info.allow_overflow:
-        start_time -= int(load_prev) * np.timedelta64(lead_time_hours, "h")
+        if set_back_by_pred_lead_time and pred_lead_time_hours is not None:
+            T = pred_lead_time_hours
+        else:
+            T = lead_time_hours
+        start_time -= int(load_prev) * np.timedelta64(T, "h")
         end_time += multistep * np.timedelta64(lead_time_hours, "h")
 
     # end_time is excluded by default so we need to add a small extra
@@ -446,6 +463,8 @@ class Era5Forecast(Era5Dataset):
         pred_lead_time_hours: int | None = None,
         multistep: int = 1,
         load_prev: bool = True,
+        set_back_by_pred_lead_time: bool = False,
+        load_prev_steps_ids: List[int] | None = None,
         load_clim: bool = False,
         switch_recent_data_after_steps: int = 250000,
         warning_on_nan: bool = True,
@@ -492,6 +511,8 @@ class Era5Forecast(Era5Dataset):
         self.switch_recent_data_after_steps = switch_recent_data_after_steps
         self.interpolate_input = interpolate_input
         self.interpolate_target = interpolate_target
+        self.set_back_by_pred_lead_time = set_back_by_pred_lead_time
+        self.load_prev_steps_ids = load_prev_steps_ids
 
         super().__init__(
             path,
@@ -569,10 +590,14 @@ class Era5Forecast(Era5Dataset):
                 norm_file=forcings_stats_path, variables=forcing_vars, levels=None
             )
             self.forcings_mean, self.forcings_std = forcing_stats.load_normalization_stats()
-            self.forcings_mean, self.forcings_std = (
-                self.forcings_mean.squeeze(1),
-                self.forcings_std.squeeze(1),
+
+            print(
+                "Squeezing forcings mean and std to remove level dimension since forcings don't have levels."
             )
+            # Squeezing does not work on tensordict as batch_size = []
+            # Instead we squeeze the underlying tensors and keep them as tensordicts.
+            self.forcings_mean = self.forcings_mean.apply(lambda x: x.squeeze(1))
+            self.forcings_std = self.forcings_std.apply(lambda x: x.squeeze(1))
         else:
             warnings.warn(
                 "No forcings_stats_path provided. Forcings will not be normalized.", UserWarning
@@ -600,6 +625,7 @@ class Era5Forecast(Era5Dataset):
     def __len__(self):
         # Take into account previous and/or future timestamps loaded for one example.
         offset = self.multistep + self.load_prev
+
         return super().__len__() - offset * self._effective_lead_time_hours // self.timedelta
 
     def __getitem__(self, i, normalize=True):
@@ -648,10 +674,23 @@ class Era5Forecast(Era5Dataset):
             )
 
         if self.load_prev:
-            out["prev_state"] = super().__getitem__(
-                i - self.lead_time_hours // self.timedelta,
-                interpolate_nans=self.interpolate_input,
-            )
+            if self.load_prev_steps_ids is not None:
+                raise NotImplementedError(
+                    "Loading specific previous steps is not implemented yet."
+                )
+            if (
+                self.set_back_by_pred_lead_time
+                and self.pred_lead_time_hours != self.lead_time_hours
+            ):
+                out["prev_state"] = super().__getitem__(
+                    i - self.pred_lead_time_hours // self.timedelta,
+                    interpolate_nans=self.interpolate_input,
+                )
+            else:
+                out["prev_state"] = super().__getitem__(
+                    i - self.lead_time_hours // self.timedelta,
+                    interpolate_nans=self.interpolate_input,
+                )
 
         if self.load_clim:
             clim_xr = xr.open_dataset(self.clim_path)

@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=AWGen-unforced-1day-Masked-v2
+#SBATCH --job-name=AWGen-unforced-7day-Masked-v2-setback
 #SBATCH --account=bk1450
 #SBATCH --qos=normal
 #SBATCH --partition=gpu
@@ -10,7 +10,7 @@
 #SBATCH --exclusive
 #SBATCH --output=logs/%x.%j.out
 #SBATCH --error=logs/%x.%j.err
-#SBATCH --dependency=afterany:24662173
+#SBATCH --dependency=afterany:25355614
 
 
 . ~/.bashrc
@@ -40,9 +40,10 @@ cpus_per_task=8
 ### DATA ###
 dataset="era5pred"
 era5_path="data/era5_1x1_daily_averaged/full"
-pred_path="data/output/preds_awm-0x1x2x11-unforced-v2/step01"
+pred_path="data/output/preds_awm-0x1x2x11-unforced-v2/step07"
 lead_time_hours=24
-pred_lead_time_hours=24
+pred_lead_time_hours=168
+set_back_by_pred_lead_time=True
 interpolate_input="zero_after_norm"
 interpolate_target="none"
 warning_on_nan=False
@@ -63,11 +64,12 @@ norm_file="daily_averaged_aimip_norm_stats.nc"
 variables_surface=[10m_u_component_of_wind,10m_v_component_of_wind,2m_temperature,sea_surface_temperature,mean_sea_level_pressure,sea_ice_cover]
 loss_weight_per_variable_surface=[0.1,0.1,1.0,0.1,0.1,0.1]
 latitude=181
-residual_stats_path="residual_stats_awm-0x1x2x11-unforced_step01-v2.nc"
+residual_stats_path="residual_stats_awm-0x1x2x11-unforced_step07-v2.nc"
 state_normalization="pred"
 
 ### MODEL ###
 pred_module=Null
+load_deterministic_model=["AWM0-aimip_default-unforced","AWM1-aimip_default-unforced","AWM2-aimip_default-unforced","AWM11-aimip_default-unforced"]
 patch_size=[2,3,3]
 img_size=[13,181,360]
 forcings_ch=null
