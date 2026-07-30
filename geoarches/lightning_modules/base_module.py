@@ -68,7 +68,9 @@ class BaseLightningModule(L.LightningModule):
         """
         if Path(path).is_dir():
             path = Path(path) / "checkpoints"
+            print(path)
             paths = list(Path(path).glob("*.ckpt"))
+
             if ckpt_fname is not None:
                 paths = [p for p in paths if ckpt_fname in p.name]
             # sort by date
@@ -98,6 +100,17 @@ class BaseLightningModule(L.LightningModule):
                 betas=self.betas,
                 weight_decay=self.weight_decay,
             )
+            sched = diffusers.optimization.get_cosine_schedule_with_warmup(
+                opt,
+                num_warmup_steps=self.num_warmup_steps,
+                num_training_steps=self.num_training_steps,
+                num_cycles=self.num_cycles,
+            )
+            sched = {
+                "scheduler": sched,
+                "interval": "step",  # or 'epoch'
+                "frequency": 1,
+            }
         else:
             opt = torch.optim.AdamW(
                 self.parameters(),
@@ -106,17 +119,18 @@ class BaseLightningModule(L.LightningModule):
                 weight_decay=self.weight_decay,
             )
 
-        sched = diffusers.optimization.get_cosine_schedule_with_warmup(
-            opt,
-            num_warmup_steps=self.num_warmup_steps,
-            num_training_steps=self.num_training_steps,
-            num_cycles=self.num_cycles,
-        )
-        sched = {
-            "scheduler": sched,
-            "interval": "step",  # or 'epoch'
-            "frequency": 1,
-        }
+            sched = diffusers.optimization.get_cosine_schedule_with_warmup(
+                opt,
+                num_warmup_steps=self.num_warmup_steps,
+                num_training_steps=self.num_training_steps,
+                num_cycles=self.num_cycles,
+            )
+            sched = {
+                "scheduler": sched,
+                "interval": "step",  # or 'epoch'
+                "frequency": 1,
+            }
+
         return [opt], [sched]
 
 

@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.utils.checkpoint as gradient_checkpoint
 from hydra.utils import instantiate
+from torch.nn.functional import relu
 
 from geoarches.backbones import dit
 from geoarches.dataloaders import zarr
@@ -40,6 +41,7 @@ class ForecastModule(BaseLightningModule):
         test_filename_suffix="",
         check_nans_in_pred=False,  # For debugging nan loss.
         use_masked_loss=True,
+        apply_relu: dict | None = None,
         **kwargs,
     ):
         """should create self.encoder and self.decoder in subclasses"""
@@ -75,6 +77,10 @@ class ForecastModule(BaseLightningModule):
             }
         )
 
+        self.apply_relu = apply_relu
+        print(self.apply_relu)
+        self.relu_print = 0
+
     def forward(self, batch, *args, **kwargs):
         x = self.embedder.encode(
             batch["state"], batch.get("prev_state", None), batch.get("forcings", None)
@@ -89,6 +95,16 @@ class ForecastModule(BaseLightningModule):
         if self.add_input_state:
             out += batch["state"]
 
+        if self.apply_relu is not None:
+            if self.relu_print == 0:
+                print("APPLYING RELU")
+                self.relu_print = 1.0
+            for key, ids in self.apply_relu.items():
+                clone = out[key].clone()
+                relu_variables = relu(clone[:, ids])
+                clone[:, ids] = relu_variables
+                out[key] = clone
+
         return out
 
     def forward_multistep(
@@ -100,6 +116,16 @@ class ForecastModule(BaseLightningModule):
         update_fnc=None,
         return_loop_batch=False,
     ):
+        """
+        Provides multistepping with gradient checkpointing
+        Args:
+            batch (TensorDict or Dict): Contains the input
+            iters (int): Number of iterations to perform
+            return_format: If to return a tensordict or a list
+            use_avg: If several models are given, can return an ensemble mean
+            update_fnc: The method used to update the loop batch
+            return_loop_batch (bool): If the intermediate results are returned
+        """
         # multistep forward with gradient checkpointing to save GPU memory
         """if use_avg and self.avg_modules is not None:
         out = self.forward_multistep(batch, iters=iters, use_avg=False)
@@ -201,6 +227,7 @@ class ForecastModule(BaseLightningModule):
                     denormalize(batch["next_state"])[:, None], denormalize(pred)[:, None]
                 )
                 outputs = metric.compute()
+                outputs["lr"] = self.lr_schedulers().get_last_lr()[0]
                 self.mylog(**outputs)
 
         else:

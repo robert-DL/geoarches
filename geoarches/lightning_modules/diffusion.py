@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
 from hydra.utils import instantiate
+from torch.nn.functional import relu
 from tqdm import tqdm
 
 import geoarches.stats as geoarches_stats
@@ -54,6 +55,7 @@ class DiffusionModule(BaseLightningModule):
         noise_scheduler=None,
         inference_scheduler=None,
         use_masked_loss=True,
+        apply_relu: dict | None = None,
         **kwargs,
     ):
         """
@@ -119,6 +121,9 @@ class DiffusionModule(BaseLightningModule):
 
         self.test_outputs = []
         self.validation_samples = {}
+
+        self.apply_relu = apply_relu
+        self.relu_print = 0
 
     def forward(self, batch, noisy_next_state, timesteps, pred_state=None, is_sampling=False):
         input_state = noisy_next_state
@@ -339,6 +344,16 @@ class DiffusionModule(BaseLightningModule):
 
         elif self.learn_residual == "pred":
             final_state = pred_state + final_state
+
+        if self.apply_relu is not None:
+            if self.relu_print == 0:
+                print("APPLYING RELU")
+                self.relu_print = 1.0
+            for key, ids in self.apply_relu.items():
+                clone = final_state[key].clone()
+                relu_variables = relu(clone[:, ids])
+                clone[:, ids] = relu_variables
+                final_state[key] = clone
 
         if return_det_prediction:
             return final_state, pred_state

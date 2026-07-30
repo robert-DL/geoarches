@@ -11,6 +11,9 @@ modelstore
 data
 wandblogs 
 
+# Stats files 
+residual_*.nc
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

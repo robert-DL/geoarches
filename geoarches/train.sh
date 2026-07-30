@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=AWM0-forced-reduced
+#SBATCH --job-name=AWM2-reduced_precip-relu
 #SBATCH --account=bk1450
 #SBATCH --qos=normal
 #SBATCH --partition=gpu
@@ -10,7 +10,7 @@
 #SBATCH --exclusive
 #SBATCH --output=logs/%x.%j.out
 #SBATCH --error=logs/%x.%j.err
-#SBATCH --dependency=afterany:24549346
+##SBATCH --dependency=afterany:26219274
 
 . ~/.bashrc
 
@@ -31,23 +31,23 @@ echo "Using ${SLURM_GPUS_PER_NODE} GPUs."
 name=${SLURM_JOB_NAME}
 echo "Experiment Name: ${name}"
 log=True
-seed=0
+seed=2
 save_step_frequency=10000
 cpus_per_task=8
-max_steps=200000
+max_steps=300000
 
 ### DATA ###
-era5_path="data/era5_1x1_daily_averaged/full"
+era5_path="data/era5_1x1_daily/full"
 lead_time_hours=24
 interpolate_input="zero_after_norm"
 interpolate_target="none"
 warning_on_nan=False
-domain="aimip_train_0h"
-val_domain="aimip_val"
+domain="daily_train"
+val_domain="daily_val"
 switch_recent_data_after_steps=300000
-dataloader_dataset_forcings_path="data/era5_1x1/ERA5-1x1-monthly-mean-forcing-1978-2024_regridded.nc"
-dataloader_dataset_forcings_stats_path="/home/b/b383170/repositories/geoarches/geoarches/data/era5_1x1/ERA5-0.25deg-monthly-mean-forcing-1978-2013_regridded_conservative_norm_stats.nc"
-dataloader_dataset_forcing_vars=["sea_surface_temperature","sea_ice_cover"]
+dataloader_dataset_forcings_path=Null #"data/era5_1x1/ERA5-1x1-monthly-mean-forcing-1978-2024_regridded.nc"
+dataloader_dataset_forcings_stats_path=Null #"/home/b/b383170/repositories/geoarches/geoarches/data/era5_1x1/ERA5-0.25deg-monthly-mean-forcing-1978-2013_regridded_conservative_norm_stats.nc"
+dataloader_dataset_forcing_vars=Null #["sea_surface_temperature","sea_ice_cover"]
 
 ### WANDB ###
 wandb_mode="online" # "offline" or "online"
@@ -55,17 +55,17 @@ wandb_entity="deep-climate"
 wandb_project="geoclimate"
 
 ### STATS ###
-norm_file="daily_averaged_aimip_norm_stats.nc"
+norm_file="daily_norm_stats_w_log.nc"
 variables_surface=[10m_u_component_of_wind,10m_v_component_of_wind,2m_temperature,sea_surface_temperature,mean_sea_level_pressure,sea_ice_cover,total_precipitation]
-loss_weight_per_variable_surface=[0.1,0.1,1.0,0.1,0.1,0.1]
+loss_weight_per_variable_surface=[0.1,0.1,1.0,0.1,0.1,0.1,0.1]
 latitude=181
 
 ### MODEL ###
 patch_size=[2,3,3]
 img_size=[13,181,360]
-forcings_ch=2
-forcings_embedding="surface"
-surface_ch=6  # length of variables_surface
+forcings_ch=0
+forcings_embedding=Null
+surface_ch=7  # length of variables_surface
 emb_dim=192
 out_emb_dim=384
 backbone_window_size=[1,6,10]
@@ -77,7 +77,7 @@ depth_multiplier=2
 constant_mask_file="archesweather_constant_masks_1x1"
 padding_mode="latlon"
 cond_times=["day_of_year"]
-
+apply_relu='{surface:[-1]}'
 
 srun --cpu-bind=none --mem-bind=none --gpus-per-node=4 --mem=0 --cpus-per-task=8 python3 main_hydra.py \
     ++name=${name} \
@@ -104,6 +104,7 @@ srun --cpu-bind=none --mem-bind=none --gpus-per-node=4 --mem=0 --cpus-per-task=8
     ++stats.compute_loss_coeffs_args.latitude=${latitude} \
     ++module.module.lr=${lr} \
     ++module.module.cond_times=${cond_times} \
+    ++module.module.apply_relu=${apply_relu} \
     ++module.embedder.img_size=${img_size} \
     ++module.embedder.patch_size=${patch_size} \
     ++module.embedder.surface_ch=${surface_ch} \

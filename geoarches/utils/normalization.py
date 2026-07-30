@@ -24,6 +24,23 @@ default_var_weights = {
 }
 
 
+def normalize_dims(data: xr.DataArray | xr.Dataset):
+    mapping = {}
+    for d in list(data.coords.keys()):
+        if "time" in d:
+            mapping[d] = "time"
+        elif "lat" in d:
+            mapping[d] = "latitude"
+        elif "lon" in d:
+            mapping[d] = "longitude"
+        elif any(x in d for x in ["lvl", "level", "lev"]):
+            mapping[d] = "level"
+        else:
+            print(f"No mapping for {d} implemented")
+
+    return data.rename(mapping)
+
+
 class NormalizationStatistics:
     def __init__(
         self,
@@ -99,6 +116,7 @@ class NormalizationStatistics:
         """
         mean, std = {}, {}
         with xr.open_dataset(self.norm_file_path) as stats_ds:
+            stats_ds = normalize_dims(stats_ds)
             for var_type, var_names in self.variables.items():
                 # Select by levels if level dimension is present.
                 indexers = {}
@@ -137,6 +155,7 @@ class NormalizationStatistics:
         )  # Default to norm file if no delta path provided
 
         with xr.open_dataset(path) as stats_ds:
+            stats_ds = normalize_dims(stats_ds)
             surface_stds = torch.from_numpy(
                 stats_ds[self.variables["surface"]].sel(statistic="diff_std").to_array().to_numpy()
             )[..., None, None, None]

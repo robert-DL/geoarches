@@ -25,13 +25,13 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3
 echo "Running on ${SLURM_JOB_NUM_NODES} nodes with ${SLURM_CPUS_PER_TASK} CPUs per task."
 echo "Using ${SLURM_GPUS_PER_NODE} GPUs."
 
-uid0="modelstore/AWM0-aimip_default-unforced"
-uid1="modelstore/AWM1-aimip_default-unforced"
-uid2="modelstore/AWM2-aimip_default-unforced"
+uid0="modelstore/AWM0-reduced_precip-relu"
+uid1="modelstore/AWM1-reduced_precip-relu"
+uid2="modelstore/AWM2-reduced_precip-relu"
 uid3="modelstore/AWM11-aimip_default-unforced"
 
 srun --cpu-bind=none --mem-bind=none --gpus-per-node=4 --mem=0 --cpus-per-task=8 python3 inference/encode_dataset.py \
-    --target-path="data/output/preds_awm-0x1x2x11-unforced-v2" \
-    --uids=${uid0},${uid1},${uid2},${uid3} \
-    --encode-hours=18 \
+    --target-path="data/output/AWM-reduced_precip-relu" \
+    --uids=${uid0},${uid1},${uid2} \
+    --encode-hours=Null \
     --forecast-steps=1,3,5,7

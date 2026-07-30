@@ -92,6 +92,7 @@ surface_variables_short = {
     "total_precipitation_24hr": "TP24",
     "total_column_water_vapour": "TCWV",
     "wind_speed": "WS",
+    "total_precipitation": "TP",
 }
 
 level_variables_short = {

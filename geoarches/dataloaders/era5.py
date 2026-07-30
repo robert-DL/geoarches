@@ -50,9 +50,9 @@ filename_filters = dict(
     aimip_train_0h=lambda x: any(str(y) in x for y in range(1979, 2014)) and ("0h" in x),
     aimip_val_0h=lambda x: ("2013" in x or "2014" in x or "2015" in x) and ("0h" in x),
     aimip_test_0h=lambda x: ("2016" in x or "2017" in x or "2018" in x) and ("0h" in x),
-    daily_train=lambda x: any(str(x) in x for y in range(1979, 2014)),
+    daily_train=lambda x: any(str(y) in x for y in range(1979, 2014)),
     daily_val=lambda x: ("2013" in x or "2014" in x or "2015" in x),
-    daily_test=lambda x: ("2016" in x or "2017" in x or "2018" in x) and ("0h" in x),
+    daily_test=lambda x: ("2016" in x or "2017" in x or "2018" in x),
 )
 
 # we will deprecate filename_filters and use timestamp bounds instead.
@@ -154,6 +154,16 @@ domain_time_info = {
     "aimip_test_0h": DomainTimeInfo(
         start_time="2016-01-01T00:00:00",
         end_time="2018-12-31T00:00:00",
+        timedelta=24,
+    ),
+    "daily_train": DomainTimeInfo(
+        start_time="1979-01-01T00",
+        end_time="2013-12-31T00",
+        timedelta=24,
+    ),
+    "daily_val": DomainTimeInfo(
+        start_time="2014-01-01T00",
+        end_time="2014-12-31T00",
         timedelta=24,
     ),
 }
@@ -788,11 +798,37 @@ class Era5Forecast(Era5Dataset):
         means = self.data_mean.to(device)
         stds = self.data_std.to(device)
 
+        log_vars_exist = any(v in self.log_eligblie_variables for v in self.variables["surface"])
+
         if "surface" in batch:
             # we can denormalize directly
-            return batch * stds + means
+            out = batch * stds + means
+        else:
+            out = {k: (v * stds + means if "state" in k else v) for k, v in batch.items()}
 
-        out = {k: (v * stds + means if "state" in k else v) for k, v in batch.items()}
+        if self.apply_log_transform and log_vars_exist:
+            ids_log_vars = [
+                self.variables["surface"].index(v) for v in self.log_eligblie_variables
+            ]
+            if "surface" in batch:
+                dtype = out["surface"].dtype
+                log_tensor = out["surface"].clone()
+                if log_tensor.shape[1] == len(self.variables["surface"]):
+                    log_tensor_element = torch.exp(log_tensor[:, ids_log_vars] + 1.0e-5).to(dtype)
+                    log_tensor[:, ids_log_vars] = log_tensor_element
+
+                else:
+                    log_tensor_element = torch.exp(log_tensor[:, :, ids_log_vars] + 1.0e-5).to(
+                        dtype
+                    )
+                    log_tensor[:, :, ids_log_vars] = log_tensor_element
+                out["surface"] = log_tensor
+                return out
+            else:
+                for k, v in batch.items():
+                    if "state" in k:
+                        k["surface"][:, ids_log_vars] = torch.exp(v[:, ids_log_vars])
+
         return out
 
     def iteration_hook(self, model):

@@ -8,9 +8,10 @@ module:
   weight_decay: 0.05
   num_warmup_steps: 5000
   num_training_steps: ${max_steps}
-
+  apply_relu: Null
+  
 defaults:
-  - metrics:  # Read from module/metrics/ folder.
+  - metrics:  # Read fxrom module/metrics/ folder.
     - era5_deterministic
 
 train:

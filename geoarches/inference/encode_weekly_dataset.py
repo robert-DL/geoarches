@@ -2,8 +2,8 @@
 encode_dataset.py
 =================
 Run inference with one or more models and store encoded / multi-step
-forecast-outputs as NetCDF files, one file per year * initialisation-hour *
-forecast step.
+forecast as weekly average outputs as NetCDF files
+--> one file per year × initialisation-hour × forecast step.
 
 Multi-GPU parallelisation
 -------------------------
@@ -539,6 +539,7 @@ def _encode_worker(rank: int, world_size: int, args) -> None:
         # Iterative multi-step forecast
         out = None
         with torch.no_grad():
+            steps = []
             for step in range(1, max_steps + 1):
                 if step > 1:
                     if "prev_state" in cur:
@@ -555,19 +556,32 @@ def _encode_worker(rank: int, world_size: int, args) -> None:
                 # physically consistent.
                 out = _fill_land_points(out, nan_mask, args.nan_replacement, ds.variables)
 
-                if step in forecast_steps_set:
-                    pred_ts = cur["timestamp"] + lead_time_hours * 3600
-                    pred_year = pd.to_datetime(int(pred_ts[0].item()), unit="s", utc=True).year
-                    if pred_year not in todo_years_set:
-                        continue
+                pred_ts = cur["timestamp"] + lead_time_hours * 3600
+                pred_year = pd.to_datetime(int(pred_ts[0].item()), unit="s", utc=True).year
+                if pred_year not in todo_years_set:
+                    continue
 
-                    denorm_out = ds.denormalize(out.cpu())
-                    denorm_out = _apply_nan_mask(denorm_out, nan_mask)
-                    if pred_year not in xr_lists_by_year:
-                        xr_lists_by_year[pred_year] = _new_step_bucket(forecast_steps_set)
-                    xr_lists_by_year[pred_year][step].append(
-                        ds.convert_to_xarray(denorm_out, pred_ts)
-                    )
+                denorm_out = ds.denormalize(out.cpu())
+                denorm_out = _apply_nan_mask(denorm_out, nan_mask)
+                if pred_year not in xr_lists_by_year:
+                    xr_lists_by_year[pred_year] = _new_step_bucket(forecast_steps_set)
+
+                steps.append(ds.convert_to_xarray(denorm_out, pred_ts))
+
+                if step == 6:
+                    week = 1
+                elif step == 13:
+                    week = 2
+                elif step == 20:
+                    week = 3
+                elif step == 27:
+                    week = 4
+
+                avg = xr.concat(steps).mean("time")
+                steps = []
+                xr_lists_by_year[pred_year][week].append(avg)
+
+            xr_lists_by_year[pred_year]
 
         if args.debug and i >= 20:
             break

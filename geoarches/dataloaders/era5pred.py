@@ -25,6 +25,7 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         pred_dimension_indexers={},
         interpolate_input: util.NanInterpolationMethod | None = None,
         load_trajectory=False,
+        replace_with_zero_input: dict = None,
         **kwargs,
     ):
         """Args:
@@ -47,6 +48,8 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         mapped by their keys to be processed into tensordict.
             e.g. {surface:[...], level:[...] By default uses standard 6 level
             and 4 surface vars.
+        replace_with_zero_input: If to replace variables with zero input data
+
         """
         super().__init__(
             stats_cfg=stats_cfg,
@@ -79,8 +82,9 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
             )
             # pred_ds should be synchronized with main ds, so we adjust timestamp bounds
             # accordingly.
-            start_time = min(x[-1] for x in self.timestamps)
-            end_time = max(x[-1] for x in self.timestamps)
+            lead = np.timedelta64(self.pred_lead_time_hours, "h")
+            start_time = min(x[-1] for x in self.timestamps) + lead
+            end_time = max(x[-1] for x in self.timestamps) + lead
             self.pred_ds.set_timestamp_bounds(start_time, end_time + np.timedelta64(1, "s"))
 
         # TODO: is the stats file in geoarches ?

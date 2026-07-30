@@ -1,0 +1,11 @@
+#yaml# configs/experiment/cluster_train.yaml
+defaults:
+  # 1. Overriding Config Groups (Sub-files)
+  - override /cluster: slurm       # Changes cluster from 'local' to 'slurm'
+  - override /stats: graphcast     # Changes stats from 'pangu' to 'graphcast'
+  - _self_                         # Places this file's overrides AFTER the defaults
+
+# 2. Overriding Primitive Variables
+log: True                          # Turns on wandb logging
+name: slurm_run_v1                 # Changes the experiment name
+max_steps: 500000                  # Increases the max training steps

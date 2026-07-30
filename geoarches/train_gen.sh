@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=AWGen-unforced-7day-Masked-v2-setback
+#SBATCH --job-name=AWGen-unforced-7day-precip-relu
 #SBATCH --account=bk1450
 #SBATCH --qos=normal
 #SBATCH --partition=gpu
@@ -10,7 +10,7 @@
 #SBATCH --exclusive
 #SBATCH --output=logs/%x.%j.out
 #SBATCH --error=logs/%x.%j.err
-#SBATCH --dependency=afterany:25355614
+#SBATCH --dependency=afterany:26455890
 
 
 . ~/.bashrc
@@ -39,16 +39,16 @@ cpus_per_task=8
 
 ### DATA ###
 dataset="era5pred"
-era5_path="data/era5_1x1_daily_averaged/full"
-pred_path="data/output/preds_awm-0x1x2x11-unforced-v2/step07"
+era5_path="data/era5_1x1_daily/full"
+pred_path="/home/b/b383170/repositories/geoarches/geoarches/data/output/AWM-reduced_precip-relu/step07"
 lead_time_hours=24
 pred_lead_time_hours=168
-set_back_by_pred_lead_time=True
+set_back_by_pred_lead_time=False
 interpolate_input="zero_after_norm"
 interpolate_target="none"
 warning_on_nan=False
-domain="aimip_train"
-val_domain="aimip_val"
+domain="daily_train"
+val_domain="daily_val"
 switch_recent_data_after_steps=300000
 dataloader_dataset_forcings_path=null #"data/era5_1x1/ERA5-1x1-monthly-mean-forcing-1978-2024_regridded.nc"
 dataloader_dataset_forcings_stats_path=null #"/home/b/b383170/repositories/geoarches/geoarches/data/era5_1x1/ERA5-0.25deg-monthly-mean-forcing-1978-2013_regridded_conservative_norm_stats.nc"
@@ -60,21 +60,21 @@ wandb_entity="deep-climate"
 wandb_project="geoclimate"
 
 ### STATS ###
-norm_file="daily_averaged_aimip_norm_stats.nc"
-variables_surface=[10m_u_component_of_wind,10m_v_component_of_wind,2m_temperature,sea_surface_temperature,mean_sea_level_pressure,sea_ice_cover]
-loss_weight_per_variable_surface=[0.1,0.1,1.0,0.1,0.1,0.1]
+norm_file="daily_norm_stats_w_log.nc"
+variables_surface=[10m_u_component_of_wind,10m_v_component_of_wind,2m_temperature,sea_surface_temperature,mean_sea_level_pressure,sea_ice_cover,total_precipitation]
+loss_weight_per_variable_surface=[0.1,0.1,1.0,0.1,0.1,0.1,0.1]
 latitude=181
-residual_stats_path="residual_stats_awm-0x1x2x11-unforced_step07-v2.nc"
+residual_stats_path="/home/b/b383170/repositories/geoarches/geoarches/stats/residual_stats_awm-0x1x2-precip_relu-step07.nc"
 state_normalization="pred"
 
 ### MODEL ###
 pred_module=Null
-load_deterministic_model=["AWM0-aimip_default-unforced","AWM1-aimip_default-unforced","AWM2-aimip_default-unforced","AWM11-aimip_default-unforced"]
+load_deterministic_model=["AWM0-reduced_precip-relu","AWM1-reduced_precip-relu","AWM2-reduced_precip-relu"]
 patch_size=[2,3,3]
 img_size=[13,181,360]
 forcings_ch=null
 forcings_embedding=null
-surface_ch=6  # length of variables_surface
+surface_ch=7  # length of variables_surface
 emb_dim=192
 out_emb_dim=384
 backbone_window_size=[1,6,10]
@@ -84,9 +84,11 @@ backbone_num_heads=[6,12,12,6]
 lr=3.0e-4
 depth_multiplier=2
 constant_mask_file="archesweather_constant_masks_1x1"
-padding_mode="circular"
+padding_mode="latlon"
 cond_times=["day_of_year"]
 val_num_members=3
+apply_relu='{surface:[-1],level:[-2]}'
+
 
 
 srun --cpu-bind=none --mem-bind=none --gpus-per-node=4 --mem=0 --cpus-per-task=8 python3 main_hydra.py \

@@ -72,6 +72,8 @@ class XarrayDataset(torch.utils.data.Dataset):
         limit_examples: int | None = None,
         force_rebuild_index: bool = False,
         interpolate_nans: util.NanInterpolationMethod | None = None,
+        apply_log_transform: bool = True,
+        log_eligible_variables: list = ["total_precipitation"],
     ):
         """Initializes.
 
@@ -100,6 +102,9 @@ class XarrayDataset(torch.utils.data.Dataset):
         self.filename_filter = filename_filter
         self.variables = variables
         self.path = Path(path)
+
+        self.apply_log_transform = apply_log_transform
+        self.log_eligblie_variables = log_eligible_variables
 
         self.dimension_indexers = dict(dimension_indexers) if dimension_indexers else {}
 
@@ -161,6 +166,14 @@ class XarrayDataset(torch.utils.data.Dataset):
             for ds_idx, (fname, i, nptime) in enumerate(self.timestamps)
         }
 
+    @functools.cached_property
+    def nptime_to_loc_info_seconds(self) -> Dict[np.datetime64, Dict[str, Any]]:
+        """Second-resolution timestamp index for robust cross-unit lookup."""
+        return {
+            nptime.astype("datetime64[s]"): dict(fname=fname, line_id=i, dataset_index=ds_idx)
+            for ds_idx, (fname, i, nptime) in enumerate(self.timestamps)
+        }
+
     def get_file_timestamps(self, fname: str) -> List[Tuple[str, int, np.datetime64]]:
         with xr.open_dataset(self.path / fname, **self.xr_options) as obs:
             time_dim_name = "time" if "time" in obs.coords else "valid_time"
@@ -185,8 +198,8 @@ class XarrayDataset(torch.utils.data.Dataset):
         # Ensure we only keep files with the expected extension.
         # In particular, this ensures we filter out temporary files which have
         # additional .tmp.xxx suffixes.
-        files = (x for x in self.path.glob("*") if x.suffix in engine_mapping.keys())
-
+        files = [x for x in self.path.glob("*") if x.suffix in engine_mapping.keys()]
+        print(files)
         self.timestamps = []
 
         for fpath in tqdm(files):
@@ -266,9 +279,12 @@ class XarrayDataset(torch.utils.data.Dataset):
 
     def select_from_nptime(self, nptime: np.datetime64, return_timestamp=False) -> Tuple[str, int]:
         """Get file name and line id for a given timestamp string."""
-        if nptime not in self.nptime_to_loc_info:
+        info = self.nptime_to_loc_info.get(nptime)
+        if info is None:
+            info = self.nptime_to_loc_info_seconds.get(nptime.astype("datetime64[s]"))
+        if info is None:
             raise ValueError(f"Timestamp {nptime} not found in dataset.")
-        idx = self.nptime_to_loc_info[nptime]["dataset_index"]
+        idx = info["dataset_index"]
         return self.__getitem__(idx, return_timestamp=return_timestamp)
 
     def __getitem__(
@@ -301,6 +317,14 @@ class XarrayDataset(torch.utils.data.Dataset):
             nan_mask = tensordict_apply(torch.isnan, tdict_before_interpolation)
 
         obsi = util.pre_norm_interpolate_nans(obsi, interpolate_nans)
+
+        # Check if we need to apply a log - transform
+        any_log_vars = any(v in obsi.data_vars.keys() for v in self.log_eligblie_variables)
+        if self.apply_log_transform and any_log_vars:
+            for v in self.log_eligblie_variables:
+                if v in obsi.data_vars.keys():
+                    obsi[v].data = np.log(obsi[v].values + 1.0e-5)
+
         tdict = self.convert_to_tensordict(obsi)
 
         if warning_on_nan and interpolate_nans != util.NanInterpolationMethod.NONE:
