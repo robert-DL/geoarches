@@ -12,12 +12,9 @@ distributions manually.
 - [ ] Update release notes and documentation for all user-visible changes.
 - [ ] Choose a PEP 440 version. Use `X.Y.ZrcN` for a release candidate and `X.Y.Z` for a
       final release.
-- [ ] Update `project.version` in `pyproject.toml` and refresh the lock file:
-
-  ```bash
-  uv version X.Y.Zrc1
-  uv lock
-  ```
+- [ ] Confirm that the version tag does not already exist locally or on PyPI. The package
+      version is derived automatically from Git tags by `setuptools-scm`; there is no version
+      field to update in `pyproject.toml`.
 
 - [ ] Build and inspect the distributions locally:
 
@@ -26,11 +23,11 @@ distributions manually.
   uvx --from twine==6.2.0 twine check --strict dist/*
   ```
 
-- [ ] Commit the version and release notes through a pull request and merge it into `main`.
-      Never tag a commit from a feature branch.
+- [ ] Commit the release notes through a pull request and merge it into `main`. Never tag a
+      commit from a feature branch.
 
-The publishing workflows reject malformed tags, tags that do not match `project.version`,
-and tags that do not point to the current tip of `main`.
+The publishing workflows reject malformed tags, artifacts whose derived version does not
+match the pushed tag, and tags that do not point to the current tip of `main`.
 
 ## 2. Publish a release candidate to TestPyPI
 
@@ -63,13 +60,11 @@ Release candidates are strongly recommended for minor and major releases.
     -c "import geoarches; print(geoarches.__version__)"
   ```
 
-If another candidate is needed, increment `N`, update `project.version`, merge that change,
-and create a new tag. Published files and versions cannot be replaced.
+If another candidate is needed, fix any issues through a pull request, increment `N`, and
+create a new tag from the updated `main` tip. Published files and versions cannot be replaced.
 
 ## 3. Publish the final release to PyPI
 
-- [ ] Change `project.version` from `X.Y.ZrcN` to `X.Y.Z`, refresh the lock file, and merge
-      the release commit into `main`.
 - [ ] Update local `main`, create a signed final tag, verify it, and push it:
 
   ```bash
@@ -99,8 +94,6 @@ and create a new tag. Published files and versions cannot be replaced.
 - [ ] Verify the generated release notes and edit them if necessary.
 - [ ] Verify the stable documentation build and its version selector.
 - [ ] Announce the release through the appropriate project channels.
-- [ ] Open the next development pull request if the project tracks an upcoming version in
-      `pyproject.toml`.
 
 ## Failed releases
 

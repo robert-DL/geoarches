@@ -47,18 +47,10 @@ jobs:
           python - <<'PY'
           import os
           import re
-          import tomllib
 
           tag = os.environ["RELEASE_TAG"]
           if re.fullmatch(r"v\d+\.\d+\.\d+", tag) is None:
               raise SystemExit(f"Final release tag has invalid format: {tag}")
-
-          with open("pyproject.toml", "rb") as pyproject_file:
-              package_version = tomllib.load(pyproject_file)["project"]["version"]
-          if tag != f"v{package_version}":
-              raise SystemExit(
-                  f"Tag {tag} does not match pyproject.toml version {package_version}"
-              )
           PY
 
       - name: Check lock file
@@ -66,6 +58,35 @@ jobs:
 
       - name: Build wheel and source distribution
         run: uv build --no-sources
+
+      - name: Verify built version matches tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import email.parser
+          import glob
+          import os
+          import zipfile
+
+          wheel = glob.glob("dist/*.whl")
+          if len(wheel) != 1:
+              raise SystemExit(f"Expected one wheel, found: {wheel}")
+          with zipfile.ZipFile(wheel[0]) as wheel_file:
+              metadata_path = next(
+                  name for name in wheel_file.namelist() if name.endswith(".dist-info/METADATA")
+              )
+              metadata = email.parser.Parser().parsestr(
+                  wheel_file.read(metadata_path).decode()
+              )
+
+          expected_version = os.environ["RELEASE_TAG"].removeprefix("v")
+          built_version = metadata["Version"]
+          if built_version != expected_version:
+              raise SystemExit(
+                  f"Built version {built_version} does not match tag {expected_version}"
+              )
+          PY
 
       - name: Validate distribution metadata
         run: uvx --from twine==6.2.0 twine check --strict dist/*
