@@ -1,0 +1,137 @@
+name: Publish release candidate
+
+on:
+  push:
+    tags:
+      - "v*rc*"
+
+concurrency:
+  group: testpypi-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Test and build distribution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Validate release tag and commit
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          test "${GITHUB_SHA}" = "$(git rev-parse origin/main)" || {
+            echo "Release tags must point to the current tip of main."
+            exit 1
+          }
+          python - <<'PY'
+          import os
+          import re
+          import tomllib
+
+          tag = os.environ["RELEASE_TAG"]
+          if re.fullmatch(r"v\d+\.\d+\.\d+rc\d+", tag) is None:
+              raise SystemExit(f"Release candidate tag has invalid format: {tag}")
+
+          with open("pyproject.toml", "rb") as pyproject_file:
+              package_version = tomllib.load(pyproject_file)["project"]["version"]
+          if tag != f"v{package_version}":
+              raise SystemExit(
+                  f"Tag {tag} does not match pyproject.toml version {package_version}"
+              )
+          PY
+
+      - name: Check lock file
+        run: uv lock --check
+
+      - name: Build wheel and source distribution
+        run: uv build --no-sources
+
+      - name: Validate distribution metadata
+        run: uvx --from twine==6.2.0 twine check --strict dist/*
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Download test data
+        run: |
+          curl --fail --location --retry 3 \
+            --output geoarches/stats/era5-quantiles-2016_2022.nc \
+            https://huggingface.co/gcouairon/ArchesWeather/resolve/main/era5-quantiles-2016_2022.nc
+
+      - name: Run unit tests
+        run: uv run pytest -v tests/ --ignore=tests/functional/
+
+      - name: Store distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish-to-testpypi:
+    name: Publish distribution to TestPyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/geoarches/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish distribution
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  smoke-test:
+    name: Smoke test TestPyPI installation
+    needs: publish-to-testpypi
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install and import the published package
+        run: |
+          RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+          for attempt in 1 2 3 4 5 6; do
+            if python -m pip install --no-deps --pre \
+              --index-url https://test.pypi.org/simple/ \
+              "geoarches==${RELEASE_VERSION}"; then
+              break
+            fi
+            if [ "${attempt}" -eq 6 ]; then
+              echo "geoarches==${RELEASE_VERSION} was not available from TestPyPI."
+              exit 1
+            fi
+            sleep 20
+          done
+          python -c "import geoarches; assert geoarches.__version__ == '${RELEASE_VERSION}'"
