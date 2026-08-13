@@ -1,8 +1,8 @@
 # Release checklist
 
 Releases are built and published by GitHub Actions. Release-candidate tags publish to
-TestPyPI; final tags publish to PyPI and then create a GitHub Release. Do not upload
-distributions manually.
+TestPyPI; final tags publish to PyPI and then create a GitHub Release for the same tag. Do not
+upload distributions manually.
 
 
 ## 1. Prepare the release
@@ -23,9 +23,6 @@ distributions manually.
   uvx --from twine==6.2.0 twine check --strict dist/*
   ```
 
-- [ ] Commit the release notes through a pull request and merge it into `main`. Never tag a
-      commit from a feature branch.
-
 The publishing workflows reject malformed tags, artifacts whose derived version does not
 match the pushed tag, and tags that do not point to the current tip of `main`.
 
@@ -38,7 +35,7 @@ Release candidates are strongly recommended for minor and major releases.
   ```bash
   git switch main
   git pull --ff-only origin main
-  git tag -s vX.Y.ZrcN -m "geoarches X.Y.ZrcN"
+  git tag vX.Y.ZrcN
   git show --no-patch --decorate vX.Y.ZrcN
   git push origin vX.Y.ZrcN
   ```
@@ -65,12 +62,12 @@ create a new tag from the updated `main` tip. Published files and versions canno
 
 ## 3. Publish the final release to PyPI
 
-- [ ] Update local `main`, create a signed final tag, verify it, and push it:
+- [ ] Update local `main`, create the final tag, verify it, and push it:
 
   ```bash
   git switch main
   git pull --ff-only origin main
-  git tag -s vX.Y.Z -m "geoarches X.Y.Z"
+  git tag vX.Y.Z
   git show --no-patch --decorate vX.Y.Z
   git push origin vX.Y.Z
   ```
@@ -91,7 +88,7 @@ create a new tag from the updated `main` tip. Published files and versions canno
 
 ## 4. Post-release checks
 
-- [ ] Verify the generated release notes and edit them if necessary.
+- [ ] Review the automatically generated GitHub Release notes and edit them if necessary.
 - [ ] Verify the stable documentation build and its version selector.
 - [ ] Announce the release through the appropriate project channels.
 
