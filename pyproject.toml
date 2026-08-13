@@ -96,7 +96,7 @@ ignore-words-list = "hist"
 # opt-in (`poetry install --with docs` / `uv sync --group docs`).
 [dependency-groups]
 dev = [
-    "pytest>=8,<9",
+    "pytest",
     "ruff",
     "codespell",
     "pre-commit",
