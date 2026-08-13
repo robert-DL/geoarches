@@ -1,6 +1,7 @@
 name: Functional tests
 
 on:
+  workflow_dispatch: # Allows manual trigger from Actions tab
   push:
     branches:
       - main
