@@ -2,7 +2,7 @@
 
 ### 1. Install the package
 
-To get started, follow the [installation guide](../getting_started/installation.md) to install the package and all required dependencies.
+To get started, if not already done, follow the [installation guide](../getting_started/installation.md) to install the package with all required dependencies and download the data.
 
 !!! tip
 
@@ -18,7 +18,7 @@ conda activate geoarches
 
 For each model, we download the pytorch checkpoint as well as the hydra config needed to evaluate the model.
 
-You can then follow the [notebook tutorial](./run.ipynb) to load the models and run inference. For training, refer to the [train section](./train.md).
+You can then follow the [notebook tutorial](./run.ipynb) to load the models and run inference. To train the models from scratch, refer to the [reproduce section](./reproduce.md).
 
 ### 3. Quantile statistics
 
