@@ -10,13 +10,18 @@ To get started, if not already done, follow the [installation guide](../getting_
 
 ### 2. Download pretrained models
 
-The following script downloads four deterministic models (`archesweather-m-seed*`) and one generative model (`archesweathergen`) from Hugging Face:
+From your project directory, the following command downloads four deterministic models
+(`archesweather-m-seed*`) and one generative model (`archesweathergen`) from Hugging Face into
+`./modelstore/`:
+
 ```sh
-conda activate geoarches
-./geoarches/download/dl_aw_models.sh
+python -m geoarches.download.dl_aw_models --output-directory ./modelstore
 ```
 
-For each model, we download the pytorch checkpoint as well as the hydra config needed to evaluate the model.
+This works with both PyPI and source installations. For each model, it downloads the PyTorch
+checkpoint, adds the metadata required by PyTorch Lightning when needed, and installs the
+version-matched Hydra config used for evaluation. Existing files are reused. The five
+checkpoints require approximately 3.3 GB of disk space.
 
 You can then follow the [notebook tutorial](./run.ipynb) to load the models and run inference. To train the models from scratch, refer to the [reproduce section](./reproduce.md).
 
@@ -27,15 +32,11 @@ scores. Geoarches downloads the requested file from a pinned revision of
 [ArchesWeather on Hugging Face](https://huggingface.co/gcouairon/ArchesWeather) on first use
 and reuses the Hugging Face cache afterward.
 
-To prepare for offline use, download the files in the cache while internet access is available:
+To prepare for offline use, run this command while internet access is available. It downloads
+both files into the Hugging Face cache and prints their local paths:
 
 ```sh
-python - <<'PY'
-from geoarches.stats import QUANTILE_FILENAMES, resolve_quantiles_file
-
-for filename in QUANTILE_FILENAMES:
-    print(resolve_quantiles_file(filename))
-PY
+python -c 'from geoarches.stats import QUANTILE_FILENAMES, resolve_quantiles_file; print(*(resolve_quantiles_file(filename) for filename in QUANTILE_FILENAMES), sep="\n")'
 ```
 
 Alternatively, download only the file you need to a custom location:
@@ -46,8 +47,8 @@ curl --fail --location \
   https://huggingface.co/gcouairon/ArchesWeather/resolve/main/era5-quantiles-2016_2022.nc
 ```
 
-Replace `era5` with `hres` in both filenames for HRES quantiles. Then pass the downloaded
-path to the metric:
+Replace `era5` with `hres` in both filenames for HRES quantiles. Then, in the Python code,
+pass the downloaded path to the metric:
 
 ```python
 from geoarches.metrics.brier_skill_score import Era5BrierSkillScore
