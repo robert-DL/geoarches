@@ -15,14 +15,11 @@ WEATHERBENCH_ERA5_PATH = (
 DATA_START = np.datetime64("2019-12-31T00:00:00")
 FORECAST_START = np.datetime64("2020-01-01T00:00:00")
 FORECAST_TARGET = np.datetime64("2020-01-02T00:00:00")
-TARGET_PREDICTION_PATH = Path(__file__).with_name("awg_target_prediction.pt")
-TARGET_PREDICTION_SEED = 0
-TARGET_PREDICTION_NUM_STEPS = 25
-TARGET_PREDICTION_SCALE_INPUT_NOISE = 1.05
+TARGET_PREDICTION_PATH = Path(__file__).with_name("aw_target_prediction.pt")
 
 
-def download_archesweathergen_era5_data(data_dir: Path) -> Path:
-    """Download the smallest ERA5 slice needed by ArchesWeatherGen for one forecast."""
+def download_archesweather_era5_data(data_dir: Path) -> Path:
+    """Download the smallest ERA5 slice needed by ArchesWeather for one forecast."""
     data_dir.mkdir(parents=True, exist_ok=True)
     output_path = data_dir / "era5_240_2019_12_31_to_2020_01_02.nc"
 
@@ -40,57 +37,59 @@ def download_archesweathergen_era5_data(data_dir: Path) -> Path:
 
 
 @pytest.fixture(scope="module")
-def archesweathergen_data_path(tmp_path_factory):
-    data_dir = tmp_path_factory.mktemp("archesweathergen") / "era5_240" / "full"
-    return download_archesweathergen_era5_data(data_dir)
+def archesweather_data_path(tmp_path_factory):
+    data_dir = tmp_path_factory.mktemp("archesweather") / "era5_240" / "full"
+    return download_archesweather_era5_data(data_dir)
 
 
 @pytest.fixture(scope="module")
-def archesweathergen_batch_and_model(archesweathergen_data_path):
+def archesweather_batch_and_model(archesweather_data_path):
+    model, config = load_module("archesweather-m-seed0", device="cpu")
     ds = era5.Era5Forecast(
-        path=str(archesweathergen_data_path.parent),
+        path=str(archesweather_data_path.parent),
         domain="test",
         lead_time_hours=24,
         load_prev=True,
-        norm_scheme="pangu",
     )
     batch = {k: v[None].to("cpu") for k, v in ds[0].items()}
-    gen_model, gen_config = load_module("archesweathergen", device="cpu")
-    return batch, gen_model.to("cpu"), gen_config
+    return batch, model.to("cpu"), config
 
 
-def test_download_archesweathergen_era5_data(archesweathergen_data_path):
-    with xr.open_dataset(archesweathergen_data_path) as ds:
+def test_download_archesweather_era5_data(archesweather_data_path):
+    with xr.open_dataset(archesweather_data_path) as ds:
         assert ds.time.to_numpy()[0].astype("datetime64[s]") == DATA_START
         assert ds.time.to_numpy()[-1].astype("datetime64[s]") == FORECAST_TARGET
         assert len(ds.time) == 9
-        assert set(era5.surface_variables + era5.level_variables).issubset(ds.data_vars)
+        variables = era5.surface_variables + era5.level_variables
+        assert set(variables).issubset(ds.data_vars)
         assert ds.sizes["latitude"] == 121
         assert ds.sizes["longitude"] == 240
         assert list(ds.level.to_numpy()) == era5.pressure_levels
 
 
-def test_load_archesweathergen_model_with_real_data_batch(archesweathergen_batch_and_model):
-    batch, gen_model, gen_config = archesweathergen_batch_and_model
+def test_load_archesweather_model_with_real_data_batch(archesweather_batch_and_model):
+    batch, model, config = archesweather_batch_and_model
 
-    assert gen_model.training is False
-    assert next(gen_model.parameters()).device == torch.device("cpu")
+    assert model.training is False
+    assert next(model.parameters()).device == torch.device("cpu")
     assert {"state", "next_state", "prev_state", "timestamp", "lead_time_hours"} <= set(batch)
     assert batch["timestamp"].item() == np.datetime64(FORECAST_START, "s").astype(int)
 
 
-def test_archesweathergen_prediction_matches_target(archesweathergen_batch_and_model):
-    batch, gen_model, _ = archesweathergen_batch_and_model
+def test_archesweather_prediction_against_real_outputs(archesweather_batch_and_model):
+    batch, model, _ = archesweather_batch_and_model
     expected = torch.load(TARGET_PREDICTION_PATH, map_location="cpu", weights_only=False)
 
-    sample = gen_model.sample(
-        batch,
-        seed=TARGET_PREDICTION_SEED,
-        num_steps=TARGET_PREDICTION_NUM_STEPS,
-        scale_input_noise=TARGET_PREDICTION_SCALE_INPUT_NOISE,
-        disable_tqdm=True,
-    ).cpu()
+    with torch.no_grad():
+        pred = model(batch)
 
-    assert set(sample.keys()) == set(expected.keys())
+    assert set(pred.keys()) == set(expected.keys())
     for key in expected.keys():
-        torch.testing.assert_close(sample[key], expected[key], rtol=1e-4, atol=1e-4)
+        assert pred[key].shape == expected[key].shape
+        assert not torch.isnan(pred[key]).any()
+
+    loss = model.loss(pred, batch["next_state"])
+    assert not torch.isnan(loss)
+
+    for key in expected.keys():
+        torch.testing.assert_close(pred[key], expected[key], rtol=1e-4, atol=1e-4)
