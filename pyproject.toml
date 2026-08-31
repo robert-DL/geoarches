@@ -124,6 +124,14 @@ version = "0.0.0"
 [tool.poetry.group.docs]
 optional = true
 
+[tool.uv.extra-build-dependencies]
+# Problem with setuptools ask pkg_resources is removed in new setuptools
+asciitree = ["setuptools<82"]
+antlr4-python3-runtime = ["setuptools<82"]
+geoarches = ["setuptools<82"]
+numcodecs = ["setuptools<82"]
+cartopy = ["setuptools<82"]
+
 [project.scripts]
 geoarches-main = 'geoarches.main_hydra:main'
 geoarches-submit = 'geoarches.submit:main'

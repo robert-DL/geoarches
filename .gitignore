@@ -19,11 +19,23 @@ __pycache__/
 # C extensions
 *.so
 
+# Shell scripts (usually on clusters)
+*.sh
+
+# Core dumps from crashed processes (SLURM nodes)
+core.*
+
 # era5 quantiles
 era5-quantiles-*.nc
 
+# Residual stats
+residual*.nc
+
 # Delta stats computed on predictions
 delta*.json
+
+# Overwrite configs
+*overwrite.yaml
 
 # Distribution / packaging
 .Python
