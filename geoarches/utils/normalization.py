@@ -15,7 +15,7 @@ from geoarches.dataloaders.era5_constants import (
 from geoarches.metrics.metric_base import compute_lat_weights, compute_lat_weights_weatherbench
 
 # Stats path
-geoarches_stats_path = importlib.resources.files(geoarches_stats)
+#geoarches_stats_path = importlib.resources.files(geoarches_stats)
 
 # Default loss weights used for ArchesWeather
 default_var_weights = {
@@ -71,14 +71,14 @@ class NormalizationStatistics:
 
         self.norm_file_path = norm_file
         if not Path(norm_file).is_absolute():
-            self.norm_file_path = geoarches_stats_path / norm_file
+            self.norm_file_path = norm_file
         if not Path(self.norm_file_path).exists():
             raise ValueError(f"Normalization file {self.norm_file_path} does not exist.")
 
         self.residual_stats_path = residual_stats_path
         if self.residual_stats_path is not None:
             if not Path(self.residual_stats_path).is_absolute():
-                self.residual_stats_path = geoarches_stats_path / self.residual_stats_path
+                self.residual_stats_path = self.residual_stats_path
             if not Path(self.residual_stats_path).exists():
                 raise ValueError(f"Residual stats file {self.residual_stats_path} does not exist.")
 

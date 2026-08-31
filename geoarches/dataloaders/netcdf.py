@@ -51,6 +51,16 @@ def select_dimensions(xrdataset, dimension_indexers):
     return xrdataset
 
 
+def _accept_all_filenames(_: str) -> bool:
+    """Default filename_filter: keep every file.
+
+    Defined as a named function rather than a lambda so that Dataset instances
+    holding it as `self.filename_filter` stay picklable, which is required
+    when DataLoader workers are started with multiprocessing_context="spawn".
+    """
+    return True
+
+
 class XarrayDataset(torch.utils.data.Dataset):
     """
     dataset to read a list of xarray files and iterate through it by timestamp.
@@ -66,7 +76,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         variables: Dict[str, List[str]],
         dimension_indexers: Dict[str, Any] | None = None,
         transpose_order: tuple[Any, ...] = (..., "level", "latitude", "longitude"),
-        filename_filter: Callable = lambda _: True,  # condition to keep file in dataset
+        filename_filter: Callable = _accept_all_filenames,  # condition to keep file in dataset
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
         limit_examples: int | None = None,

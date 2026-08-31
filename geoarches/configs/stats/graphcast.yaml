@@ -1,6 +1,6 @@
 module:
   _target_: geoarches.utils.normalization.NormalizationStatistics
-  norm_file: graphcast_norm_stats.nc
+  norm_file: stats/graphcast_norm_stats.nc
   # Note: If you change number of variables,
   # update surface_ch, level_ch in embedder in configs/module/.
   variables: 

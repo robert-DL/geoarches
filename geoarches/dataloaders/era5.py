@@ -24,30 +24,95 @@ from .era5_constants import (
     surface_variables_short,
 )
 
+def _accept_all_filenames(_: str) -> bool:
+    return True
+
+
+def _accept_no_filenames(_: str) -> bool:
+    return False
+
+
+def _is_last_train(x: str) -> bool:
+    return "2018" in x
+
+
+def _is_last_train_z0012(x: str) -> bool:
+    return "2018" in x and ("0h" in x or "12h" in x)
+
+
+def _is_train(x: str) -> bool:
+    return not ("2019" in x or "2020" in x or "2021" in x)
+
+
+def _is_val(x: str) -> bool:
+    return "2018" in x or "2019" in x or "2020" in x
+
+
+def _is_test(x: str) -> bool:
+    return "2019" in x or "2020" in x or "2021" in x
+
+
+def _is_test_z0012(x: str) -> bool:
+    return ("2019" in x or "2020" in x or "2021" in x) and ("0h" in x or "12h" in x)
+
+
+def _is_test2022_z0012(x: str) -> bool:
+    return ("2022" in x) and ("0h" in x or "12h" in x)  # check if that works ?
+
+
+def _is_recent2(x: str) -> bool:
+    return any(str(y) in x for y in range(2007, 2019))
+
+
+def _is_aimip_train(x: str) -> bool:
+    return any(str(y) in x for y in range(1979, 2014))
+
+
+def _is_aimip_trainval(x: str) -> bool:
+    return any(str(y) in x for y in range(1979, 2016))
+
+
+def _is_aimip_val(x: str) -> bool:
+    return "2013" in x or "2014" in x or "2015" in x
+
+
+def _is_aimip_rollout_full(x: str) -> bool:
+    return any(str(y) in x for y in range(1978, 2025))
+
+
+def _is_aimip_rollout_z00(x: str) -> bool:
+    return any(str(y) in x for y in range(1978, 2025)) and ("0h" in x)
+
+
+def _is_aimip_rollout_z0012(x: str) -> bool:
+    return any(str(y) in x for y in range(1978, 2025)) and ("0h" in x or "12h" in x)
+
+
+# Named functions (rather than lambdas) so that Dataset instances holding a
+# reference to one of these as `self.filename_filter` remain picklable, which
+# is required when DataLoader workers are started with multiprocessing_context="spawn".
 filename_filters = dict(
-    all=(lambda _: True),
-    empty=(lambda _: False),
-    last_train=lambda x: "2018" in x,
-    last_train_z0012=lambda x: "2018" in x and ("0h" in x or "12h" in x),
-    train=lambda x: not ("2019" in x or "2020" in x or "2021" in x),
+    all=_accept_all_filenames,
+    empty=_accept_no_filenames,
+    last_train=_is_last_train,
+    last_train_z0012=_is_last_train_z0012,
+    train=_is_train,
     # Splits val and test  are from 2019 and 2020 respectively, but
     # we read the years before and after to account for offsets when
     # loading previous and future timestamps for an example.
-    val=lambda x: "2018" in x or "2019" in x or "2020" in x,
-    test=lambda x: "2019" in x or "2020" in x or "2021" in x,
-    test_z0012=lambda x: ("2019" in x or "2020" in x or "2021" in x) and ("0h" in x or "12h" in x),
-    test2022_z0012=lambda x: ("2022" in x) and ("0h" in x or "12h" in x),  # check if that works ?
-    recent2=lambda x: any([str(y) in x for y in range(2007, 2019)]),
+    val=_is_val,
+    test=_is_test,
+    test_z0012=_is_test_z0012,
+    test2022_z0012=_is_test2022_z0012,
+    recent2=_is_recent2,
     # AIMIP requires train and val on 1979-2014. We choose val on 2014 and rest on train.
     # We read the years before and after (see above comment for why).
-    aimip_train=lambda x: any(str(y) in x for y in range(1979, 2014)),
-    aimip_trainval=lambda x: any(str(y) in x for y in range(1979, 2016)),
-    aimip_val=lambda x: "2013" in x or "2014" in x or "2015" in x,
-    aimip_rollout_full=lambda x: any(str(y) in x for y in range(1978, 2025)),
-    aimip_rollout_z00=lambda x: any(str(y) in x for y in range(1978, 2025)) and ("0h" in x),
-    aimip_rollout_z0012=lambda x: (
-        any(str(y) in x for y in range(1978, 2025)) and ("0h" in x or "12h" in x)
-    ),
+    aimip_train=_is_aimip_train,
+    aimip_trainval=_is_aimip_trainval,
+    aimip_val=_is_aimip_val,
+    aimip_rollout_full=_is_aimip_rollout_full,
+    aimip_rollout_z00=_is_aimip_rollout_z00,
+    aimip_rollout_z0012=_is_aimip_rollout_z0012,
 )
 
 # we will deprecate filename_filters and use timestamp bounds instead.
@@ -247,7 +312,7 @@ class Era5Dataset(XarrayDataset):
             # TODO(geco): at some point redefine behavior of filename_filter
             filename_filter = filename_filters[domain]
         elif filename_filter is False:  # pylint: disable=g-bool-id-comparison
-            filename_filter = lambda _: True  # pylint: disable=unnecessary-lambda
+            filename_filter = _accept_all_filenames
 
         if variables is None:
             variables = dict(
@@ -567,6 +632,24 @@ class Era5Forecast(Era5Dataset):
         # Load climatology.
         self.clim_path = Path(path).parent.joinpath("era5_240_clim.nc")
 
+    def select_from_nptime(self, nptime, shift_back=True):
+        """
+        
+        Overwrites the netcdf dataset method to account for the shift happening
+        in the getitem method, that actually spits out a positively shifted 
+        date as x_init and the requested nptime becomes prev_state. This behaviour 
+        can be turned off by setting shift_back to False
+
+        """
+        if nptime not in self.nptime_to_loc_info:
+            raise ValueError(f"Timestamp {nptime} not found in dataset.")
+        idx = self.nptime_to_loc_info[nptime]["dataset_index"]
+
+        if shift_back:
+            idx -= self.load_prev * self.lead_time_hours // self.timedelta
+
+        return self[idx] 
+    
     def __len__(self):
         # Take into account previous and/or future timestamps loaded for one example.
         offset = self.multistep + self.load_prev

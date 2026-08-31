@@ -16,8 +16,6 @@ from geoarches.utils.tensordict_utils import check_pred_has_no_nans, tensordict_
 from .. import stats as geoarches_stats
 from .base_module import BaseLightningModule
 
-geoarches_stats_path = importlib.resources.files(geoarches_stats)
-
 
 class ForecastModule(BaseLightningModule):
     def __init__(

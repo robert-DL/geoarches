@@ -202,6 +202,7 @@ def main(cfg: DictConfig):
             num_workers=cfg.cluster.cpus,
             shuffle=True,
             collate_fn=collate_fn,
+            multiprocessing_context="spawn" if cfg.cluster.cpus > 0 else None,
         )  # to viz shuffle samples
         train_loader = torch.utils.data.DataLoader(
             trainset,
@@ -209,6 +210,7 @@ def main(cfg: DictConfig):
             num_workers=cfg.cluster.cpus,
             shuffle=True,
             collate_fn=collate_fn,
+            multiprocessing_context="spawn" if cfg.cluster.cpus > 0 else None,
         )
         print(f"Train loader: {len(train_loader)} batches")
         print(f"Val loader: {len(val_loader)} batches")
@@ -221,6 +223,7 @@ def main(cfg: DictConfig):
             num_workers=cfg.cluster.cpus,
             shuffle=True,  # otherwise correlated batches
             collate_fn=collate_fn,
+            multiprocessing_context="spawn" if cfg.cluster.cpus > 0 else None,
         )
 
     pl_module = instantiate(cfg.module.module, cfg.module, cfg.stats)
@@ -260,7 +263,7 @@ def main(cfg: DictConfig):
     trainer = L.Trainer(
         devices="auto",
         accelerator="auto",
-        strategy="ddp_find_unused_parameters_true" if torch.cuda.is_available() else "auto",
+        strategy="auto",
         precision=cfg.cluster.precision,
         log_every_n_steps=cfg.log_freq,
         profiler=getattr(cfg, "profiler", None),

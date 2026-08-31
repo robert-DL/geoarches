@@ -70,11 +70,12 @@ class WeatherEncodeDecodeLayer(nn.Module):
 
         geoarches_stats_path = importlib.resources.files(geoarches_stats)
         self.constant_masks = torch.load(
-            geoarches_stats_path / f"{constant_mask_file}.pt", weights_only=True
+            geoarches_stats_path / f"{constant_mask_file}", weights_only=True
         )
         constant_dims = self.constant_masks.shape[0]
 
         surface_ch_in = constant_dims + surface_ch + n_concatenated_states * surface_ch
+
         if self.forcings_embedding == ForcingsEmbedding.SURFACE:
             surface_ch_in += forcings_ch
         level_ch_in = level_ch + n_concatenated_states * level_ch

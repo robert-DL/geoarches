@@ -17,8 +17,6 @@ from geoarches.dataloaders import zarr
 from geoarches.lightning_modules import BaseLightningModule
 from geoarches.utils.tensordict_utils import tensordict_apply, tensordict_cat
 
-geoarches_stats_path = importlib.resources.files(geoarches_stats)
-
 
 class DiffusionModule(BaseLightningModule):
     """
