@@ -24,6 +24,9 @@ class NanInterpolationMethod(str, enum.Enum):
     # Fill NaNs with 0.0 after normalization.
     ZERO_AFTER_NORM = "zero_after_norm"
 
+    # Reset Nans
+    RESET_NANS = "reset_nans"
+
 
 # Methods that should be applied after normalization.
 POST_NORM_METHODS = [NanInterpolationMethod.ZERO_AFTER_NORM, NanInterpolationMethod.GLOBAL_MEAN]
@@ -70,6 +73,8 @@ def post_norm_interpolate_nans(
             fill_value = tensordict_apply(torch.nanmean, t, dim=(-2, -1), keepdim=True)
     elif nan_interpolation_method == NanInterpolationMethod.ZERO_AFTER_NORM:
         fill_value = 0.0
+    elif nan_interpolation_method == NanInterpolationMethod.RESET_NANS:
+        fill_value = torch.nan
     else:
         raise ValueError(f"Unknown nan interpolation method: {nan_interpolation_method}")
 

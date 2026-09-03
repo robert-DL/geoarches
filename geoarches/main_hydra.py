@@ -23,6 +23,8 @@ from hydra.utils import instantiate
 from lightning.pytorch.callbacks import TQDMProgressBar
 from omegaconf import DictConfig, OmegaConf
 
+from geoarches.utils.logger import AppendingCSVLogger
+
 
 def get_random_code():
     import random
@@ -166,7 +168,7 @@ def main(cfg: DictConfig):
             ckpt_path = ckpts[-1]
 
     if cfg.log:
-        print("wandb mode", cfg.cluster.wandb_mode)
+        """print("wandb mode", cfg.cluster.wandb_mode)
         print("wandb service", os.environ.get("WANDB_DISABLE_SERVICE", "variable unset"))
         run_id = cfg.name + "-" + get_random_code() if cfg.cluster.use_custom_requeue else cfg.name
         logger = L.pytorch.loggers.WandbLogger(
@@ -176,6 +178,9 @@ def main(cfg: DictConfig):
             id=run_id,
             save_dir="wandblogs",
             offline=(cfg.cluster.wandb_mode != "online"),
+        )"""
+        logger = AppendingCSVLogger(
+            **cfg.logging
         )
 
     if cfg.log and main_node and not Path(cfg.exp_dir).joinpath("checkpoints").exists():
@@ -203,6 +208,7 @@ def main(cfg: DictConfig):
             shuffle=True,
             collate_fn=collate_fn,
             multiprocessing_context="spawn" if cfg.cluster.cpus > 0 else None,
+            persistent_workers=True
         )  # to viz shuffle samples
         train_loader = torch.utils.data.DataLoader(
             trainset,
@@ -211,6 +217,8 @@ def main(cfg: DictConfig):
             shuffle=True,
             collate_fn=collate_fn,
             multiprocessing_context="spawn" if cfg.cluster.cpus > 0 else None,
+            persistent_workers=True
+
         )
         print(f"Train loader: {len(train_loader)} batches")
         print(f"Val loader: {len(val_loader)} batches")

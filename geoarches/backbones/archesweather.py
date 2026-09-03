@@ -67,10 +67,9 @@ class WeatherEncodeDecodeLayer(nn.Module):
         self.__dict__.update(
             {k: v for k, v in locals().items() if k != "self" and not k.startswith("_")}
         )
-
-        geoarches_stats_path = importlib.resources.files(geoarches_stats)
+        
         self.constant_masks = torch.load(
-            geoarches_stats_path / f"{constant_mask_file}", weights_only=True
+            constant_mask_file, weights_only=True
         )
         constant_dims = self.constant_masks.shape[0]
 

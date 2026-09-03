@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
-
 # import ValueError
 
 
@@ -30,6 +29,7 @@ def load_module(
     else:
         path = Path(path)
     cfg = OmegaConf.load(str(path / "config.yaml"))
+    OmegaConf.resolve(cfg)
     cfg.merge_with_dotlist(dotlist)
     module = instantiate(cfg.module.module, cfg.module, cfg.stats, **kwargs)
     module.init_from_ckpt(path, ckpt_fname=ckpt_fname, missing_warning=False)
