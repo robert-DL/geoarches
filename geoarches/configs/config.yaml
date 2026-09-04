@@ -11,10 +11,10 @@ defaults:
 
 
 # Wandb logging
-log: False # Turn off and on wandb logging
-entity:
-project: ${module.project}
-name: default
+logging: 
+  save_dir: logs
+  name: experiments
+  version: ${name}
 
 exp_dir: modelstore/${name} # Checkpoint dir
 resume: True  # To resume a previous run, loads checkpoint and cfg from `exp_dir`.
@@ -23,7 +23,7 @@ seed: 0
 max_steps: 300000
 batch_size: ${cluster.batch_size}
 
-save_step_frequency: 50000
+save_step_frequency: 20000
 log_freq: 100
 limit_val_batches: null
 accumulate_grad_batches: 1

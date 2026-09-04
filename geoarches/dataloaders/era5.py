@@ -83,10 +83,11 @@ def _is_aimip_rollout_full(x: str) -> bool:
 def _is_aimip_rollout_z00(x: str) -> bool:
     return any(str(y) in x for y in range(1978, 2025)) and ("0h" in x)
 
+def _is_aimip_rollout(x: str) -> bool:
+    return any(str(y) in x for y in range(1978, 2025))
 
 def _is_aimip_rollout_z0012(x: str) -> bool:
     return any(str(y) in x for y in range(1978, 2025)) and ("0h" in x or "12h" in x)
-
 
 # Named functions (rather than lambdas) so that Dataset instances holding a
 # reference to one of these as `self.filename_filter` remain picklable, which
@@ -111,6 +112,7 @@ filename_filters = dict(
     aimip_trainval=_is_aimip_trainval,
     aimip_val=_is_aimip_val,
     aimip_rollout_full=_is_aimip_rollout_full,
+    aimip_rollout=_is_aimip_rollout,
     aimip_rollout_z00=_is_aimip_rollout_z00,
     aimip_rollout_z0012=_is_aimip_rollout_z0012,
 )
@@ -191,6 +193,11 @@ domain_time_info = {
         end_time="2024-12-31T18:00:00",
         timedelta=6,
     ),
+    "aimip_rollout": DomainTimeInfo(
+        start_time="1978-09-30T00:00:00",
+        end_time="2024-12-31T18:00:00",
+        timedelta=24,
+    ),
     "aimip_rollout_z00": DomainTimeInfo(
         start_time="1978-09-30T00:00:00",
         end_time="2024-12-31T00:00:00",
@@ -257,6 +264,7 @@ def get_headline_level_variable_indices(
     return {k: v for k, v in out.items() if k in ("Z500", "T850", "Q700", "U850", "V850")}
 
 
+
 class Era5Dataset(XarrayDataset):
     """
     This class is just for loading era5-like data, without any future or prev state.
@@ -284,6 +292,7 @@ class Era5Dataset(XarrayDataset):
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
         interpolate_nans: nan_util.NanInterpolationMethod | None = None,
+        log_variables: None | dict = None,
     ):
         """Args:
 
@@ -320,6 +329,13 @@ class Era5Dataset(XarrayDataset):
                 level=arches_default_level_variables,
             )
 
+        self.log_variables = log_variables
+        self.log_variables_mask = (
+            {k: torch.tensor(v, dtype=torch.bool) for k, v in log_variables.items()}
+            if log_variables is not None
+            else None
+        )
+
         super().__init__(
             path,
             filename_filter=filename_filter,
@@ -353,12 +369,34 @@ class Era5Dataset(XarrayDataset):
         ]
         self.id2pt = dict(enumerate(self.timestamps))
 
+
+    def apply_log_transform(self, tdict: TensorDict):
+        if self.log_variables is None: return tdict
+        else:
+            for k, v in tdict.items():
+                mask = self.log_variables_mask[k]
+                tdict[k][mask] = torch.log(v[mask] + 1.e-5)
+
+            return tdict
+
+    def invert_log_transform(self, tdict):
+        if self.log_variables is None: return tdict
+        else:
+            for k, v in tdict.items():
+                mask = self.log_variables_mask[k]
+                tdict[k][mask] = torch.exp(v[mask]) - 1.e-5
+                
+            return tdict
+        
+
     def convert_to_tensordict(self, xr_dataset, debug: bool = False):
         """
         input xarr should be a single time slice
         """
 
         tdict = super().convert_to_tensordict(xr_dataset, debug=debug)
+
+        tdict = self.apply_log_transform(tdict)
         # we don't do operations on xr datasets since it takes more time than on tensors
 
         # unsqueeze surface (important)
@@ -505,6 +543,7 @@ class Era5Forecast(Era5Dataset):
         interpolate_input: nan_util.NanInterpolationMethod | None = None,
         interpolate_target: nan_util.NanInterpolationMethod | None = None,
         set_timestamp_bounds: bool = True,
+        log_variables: list | None = None
     ):
         """
         Args:
@@ -552,6 +591,7 @@ class Era5Forecast(Era5Dataset):
             set_timestamp_bounds=False,
             warning_on_nan=warning_on_nan,
             interpolate_nans=None,  # uses interpolate_input and interpolate_target
+            log_variables=log_variables
         )
 
         self.forcings_ds = None

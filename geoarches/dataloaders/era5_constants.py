@@ -84,12 +84,15 @@ surface_variables_short = {
     "slope_of_subgridscale_orography": "SSOR",
     "standard_deviation_of_orography": "SDFO",
     "surface_pressure": "SP",
+    "olr": "OLR",
+    "toa_net_thermal_radiation": "OLR",
+    "outgoing_longwave_radiation": "OLR",
     "toa_incident_solar_radiation": "SIS",
     "toa_incident_solar_radiation_12hr": "SIS12",
     "toa_incident_solar_radiation_24hr": "SIS24",
     "total_cloud_cover": "TCC",
-    "total_precipitation_12hr": "TP",
-    "total_precipitation_24hr": "TP24",
+    "total_precipitation": "TP",
+    "total_precipitation_12hr": "TP12",
     "total_column_water_vapour": "TCWV",
     "wind_speed": "WS",
 }
@@ -101,4 +104,25 @@ level_variables_short = {
     "temperature": "T",
     "specific_humidity": "Q",
     "vertical_velocity": "W",
+}
+
+# Variables that are physically constrained to be zero or positive.
+# Used to clip model predictions (in physical units) to remove small negative
+# values that a model may otherwise produce, e.g. in rollout.py.
+non_negative_variables = {
+    "specific_humidity",
+    "total_precipitation",
+    "total_precipitation_12hr",
+    "total_cloud_cover",
+    "total_column_water_vapour",
+    "sea_ice_cover",
+    "low_vegetation_cover",
+    "high_vegetation_cover",
+    "olr",
+    "toa_net_thermal_radiation",
+    "outgoing_longwave_radiation",
+    "toa_incident_solar_radiation",
+    "toa_incident_solar_radiation_12hr",
+    "toa_incident_solar_radiation_24hr",
+    "wind_speed",
 }
