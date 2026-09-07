@@ -538,7 +538,7 @@ class Era5Forecast(Era5Dataset):
         multistep: int = 1,
         load_prev: bool = True,
         load_clim: bool = False,
-        switch_recent_data_after_steps: int = 250000,
+        switch_recent_data_after_steps: int = None,
         warning_on_nan: bool = True,
         interpolate_input: nan_util.NanInterpolationMethod | None = None,
         interpolate_target: nan_util.NanInterpolationMethod | None = None,
@@ -855,11 +855,12 @@ class Era5Forecast(Era5Dataset):
 
     def iteration_hook(self, model):
         # this is to update dataset based on how many training steps have already been performed
-        if model.global_step >= self.switch_recent_data_after_steps:
-            start_time = np.datetime64("2007-01-01T00:00:00")
-            end_time = np.datetime64("2019-01-01T00:00:00")
+        if self.switch_recent_data_after_steps is not None:
+            if model.global_step >= self.switch_recent_data_after_steps:
+                start_time = np.datetime64("2007-01-01T00:00:00")
+                end_time = np.datetime64("2019-01-01T00:00:00")
 
-            delta_start = int(self.load_prev) * self.lead_time_hours * np.timedelta64(1, "h")
-            delta_end = self.multistep * self.lead_time_hours * np.timedelta64(1, "h")
+                delta_start = int(self.load_prev) * self.lead_time_hours * np.timedelta64(1, "h")
+                delta_end = self.multistep * self.lead_time_hours * np.timedelta64(1, "h")
 
-            super().set_timestamp_bounds(start_time - delta_start, end_time + delta_end)
+                super().set_timestamp_bounds(start_time - delta_start, end_time + delta_end)
