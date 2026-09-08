@@ -8,6 +8,9 @@ module:
   weight_decay: 0.05
   num_warmup_steps: 5000
   num_training_steps: ${max_steps}
+  apply_relu:
+    surface: [0, 0, 0, 0, ]
+    
 
 compute_state_scaler_args:
   state_normalization: delta

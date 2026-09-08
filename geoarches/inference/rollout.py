@@ -140,6 +140,83 @@ class Rollout:
 
         return dates, initial_batch
 
+class Forecast(Rollout):
+    def __init__(
+            self,
+            module: Union[AvgModule, ForecastModuleWithCond, DiffusionModule],
+            forecast_steps: int, 
+            dataset: era5.Era5Forecast,
+            output_path,
+            member_idx=0,
+            scale_input_noise=1.0,
+            num_steps=25,
+        ):
+
+        super().__init__(dataset, output_path=output_path)
+        self.module = module
+        self.is_diffusion = isinstance(module, DiffusionModule)
+        self.forecast_steps = forecast_steps
+        self.member_idx = member_idx
+        self.scale_input_noise = scale_input_noise
+        self.num_steps = num_steps
+
+    def call_model(self, batch):
+        """Runs one forecast step, dispatching to the right calling convention
+        depending on whether the underlying module is a diffusion model."""
+        if self.is_diffusion:
+            return self.module.sample(
+                batch,
+                seed=self.member_idx,
+                scale_input_noise=self.scale_input_noise,
+                num_steps=self.num_steps,
+            )
+        return self.module(batch)
+
+    def process_output(self, output):
+        """Denormalizes model output, clips physically non-negative variables,
+        and fills any remaining NaNs, in preparation for saving to disk."""
+        output = self.dataset.denormalize(output)
+        output = self.truncate_non_negative(output)
+        output = self.apply_nan_mask(output, fill_nans=True)
+        return output
+
+    def dump_preds(self, preds, year, init_datestring):
+        print(f"Dumping data for year {year}")
+        xrdataset = xr.concat(preds, dim="time")
+        xrdataset.to_netcdf(self.output_path + f"/output_{init_datestring}.nc")
+
+    @torch.no_grad()
+    def rollout(self, start_datestring, end_datestring=None, freq=None, periods=None):
+        dates, initial_batch = super().rollout(start_datestring, end_datestring, freq, periods)
+
+        # Add batch dim
+        initial_batch = collate_fn([initial_batch])
+
+        # Move to correct device
+        batch = {k: v.to(self.module.device) for k, v in initial_batch.items()}
+
+        preds = []
+        preds_year = None
+        for _ in dates:
+            init_timestamp = batch["timestamp"].detach().cpu()
+
+            for step in range(self.num_forecast_steps):
+                output = self.call_model(batch)
+                batch = self.advance_batch(batch, output)
+
+                output = self.process_output(output)
+                preds.append(self.dataset.convert_to_xarray(output, timestamp=init_timestamp))
+
+
+            # Dump and reset accumulated predictions whenever we cross a year boundary,
+            # so that each output file only ever holds a single calendar year.
+          
+            self.dump_preds(preds, preds_year, pd.to_datetime(init_timestamp, unit="s").strftime("%Y-%m-%dT%H"))
+            preds = []
+
+        if len(preds) > 0:
+            self.dump_preds(preds, preds_year)
+
 class ClimateRollout(Rollout):
     """
         Rollout class for both ArchesWeather (deterministic) and ArchesWeatherGen

@@ -6,6 +6,7 @@ import diffusers
 import pandas as pd
 import torch
 import torch.nn as nn
+from torch.nn.functional import relu
 import torch.utils.checkpoint as gradient_checkpoint
 from hydra.utils import instantiate
 
@@ -38,6 +39,7 @@ class ForecastModule(BaseLightningModule):
         test_filename_suffix="",
         check_nans_in_pred=False,  # For debugging nan loss.
         use_masked_loss=True,
+        apply_relu=None,
         **kwargs,
     ):
         """should create self.encoder and self.decoder in subclasses"""
@@ -54,6 +56,8 @@ class ForecastModule(BaseLightningModule):
         stats = instantiate(stats_cfg.module)
         self.variables = stats.variables
         self.levels = stats.levels
+
+        self.apply_relu = apply_relu
 
         loss_coeffs = stats.compute_loss_coeffs(**stats_cfg.compute_loss_coeffs_args)
         state_scaler = stats.compute_state_scaler(**stats_cfg.compute_state_scaler_args)
@@ -87,6 +91,19 @@ class ForecastModule(BaseLightningModule):
 
         if self.add_input_state:
             out += batch["state"]
+
+        if self.apply_relu:
+            if "level" in self.apply_relu.keys():
+                mask = self.apply_relu["level"].bool
+                out["level"][:, mask] = relu(
+                    torch.clone(out["level"][:, mask])
+                )
+
+            if "surface" in self.apply_relu.keys():
+                mask = self.apply_relu["level"].bool
+                out["surface"][:, mask] = relu(
+                    torch.clone(out["surface"][:, mask])
+                )             
 
         return out
 

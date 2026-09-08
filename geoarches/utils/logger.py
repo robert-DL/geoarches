@@ -256,14 +256,15 @@ if __name__ == "__main__":
         modelnames=[
             "archesW-s2s-0",
             "archesW-s2s-1",
+            "archesW-s2s-doy-0",
+            "archesW-s2s-doy-1",
             "archesW-s2s-2x2-0",
             "archesW-s2s-2x2-1",
-            "archesW-s2s-2x2-LE-0",
-            "archesW-s2s-2x2-LE-1",
-
+            "archesW-s2s-2x2-doy-0",
+            "archesW-s2s-2x2-doy-1",
         ],
         apply_smoothing=True,
-        ema_weight=0.5
+        ema_weight=0.7
 
     )
 
