@@ -22,3 +22,8 @@ launcher:
     slurm_srun_args:
       - "--cpu-bind=none"
       - "--mem-bind=none"
+      # Without this, srun scopes CUDA_VISIBLE_DEVICES down to a single GPU per
+      # task, so each task only sees 1 local device and Lightning's "auto"
+      # strategy silently falls back to SingleDeviceStrategy instead of DDP
+      # (no process group, no DistributedSampler, full dataset per task).
+      - "--gpu-bind=none"

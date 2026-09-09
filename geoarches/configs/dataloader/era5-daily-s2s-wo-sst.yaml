@@ -1,0 +1,31 @@
+dataset:
+  _target_: geoarches.dataloaders.era5.Era5Forecast
+  path: ${oc.env:GEOARCHES}/data/era5_1x1_daily/full/
+  lead_time_hours: 24
+  multistep: ${oc.select:module.train.rollout_iterations,1}
+  load_prev: True
+  variables:
+    surface: ${stats.module.variables.surface}
+    level: ${stats.module.variables.level}
+  dimension_indexers:
+    level: ${stats.module.levels}
+  warning_on_nan: False
+  timedelta_hours: 24
+  interpolate_input: "zero_after_norm"  # Don't remove nans in the model input.
+  interpolate_target: none  # Don't remove nans in the model target.
+  forcings_path: Null
+  forcings_stats_path: Null
+  forcing_vars: Null
+  domain: aimip_train
+  # Same as era5-daily-s2s.yaml, but with sea_surface_temperature dropped
+  # (must match the 6-variable list in stats/daily_average_stats-wo-sst.yaml).
+  log_variables:
+    surface: [0, 0, 0, 0, 1, 1]
+    level: [0, 0, 0, 0, 0, 0]
+validation_args:
+  multistep: ${oc.select:module.val.rollout_iterations,1}
+  domain: aimip_val
+
+test_args:
+  multistep: ${oc.select:module.inference.rollout_iterations,1}
+  domain: test_z0012
