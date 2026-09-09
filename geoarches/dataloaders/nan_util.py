@@ -29,7 +29,11 @@ class NanInterpolationMethod(str, enum.Enum):
 
 
 # Methods that should be applied after normalization.
-POST_NORM_METHODS = [NanInterpolationMethod.ZERO_AFTER_NORM, NanInterpolationMethod.GLOBAL_MEAN]
+POST_NORM_METHODS = [
+    NanInterpolationMethod.ZERO_AFTER_NORM,
+    NanInterpolationMethod.GLOBAL_MEAN,
+    NanInterpolationMethod.RESET_NANS,
+]
 
 
 def pre_norm_interpolate_nans(
@@ -59,8 +63,17 @@ def pre_norm_interpolate_nans(
 def post_norm_interpolate_nans(
     t: torch.Tensor | tensordict.TensorDict,
     nan_interpolation_method: NanInterpolationMethod | None,
+    nan_mask: torch.Tensor | tensordict.TensorDict | None = None,
 ):
-    """Optionally interpolates Nans in a torch tensor. Meant for after normalization."""
+    """Optionally interpolates Nans in a torch tensor. Meant for after normalization.
+
+    Args:
+        nan_mask: Which positions to fill/reset, computed once from the raw data before
+            any interpolation was applied (e.g. the land mask for an ocean-only variable).
+            Needed because `t` itself (e.g. a model's prediction) generally holds no real
+            NaNs to detect, even at positions (like land) that should always be masked out.
+            Defaults to `t.isnan()` when not provided.
+    """
     if not nan_interpolation_method or nan_interpolation_method == NanInterpolationMethod.NONE:
         return t
     if nan_interpolation_method not in POST_NORM_METHODS:
@@ -78,7 +91,10 @@ def post_norm_interpolate_nans(
     else:
         raise ValueError(f"Unknown nan interpolation method: {nan_interpolation_method}")
 
+    if nan_mask is None:
+        nan_mask = t.isnan() if isinstance(t, tensordict.TensorDict) else torch.isnan(t)
+
     if isinstance(t, torch.Tensor):
-        return torch.where(torch.isnan(t), fill_value, t)
+        return torch.where(nan_mask, fill_value, t)
     else:
-        return tensordict_apply(torch.where, t.isnan(), fill_value, t)
+        return tensordict_apply(torch.where, nan_mask, fill_value, t)

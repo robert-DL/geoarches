@@ -375,7 +375,10 @@ class Era5Dataset(XarrayDataset):
         else:
             for k, v in tdict.items():
                 mask = self.log_variables_mask[k]
-                tdict[k][mask] = torch.log(v[mask] + 1.e-5)
+                if tdict[k].shape[0] != len(mask):
+                    tdict[k][:, mask] = torch.log(v[:, mask] + 1.e-5)
+                else:
+                    tdict[k][mask] = torch.log(v[mask] + 1.e-5)
 
             return tdict
 
@@ -384,8 +387,11 @@ class Era5Dataset(XarrayDataset):
         else:
             for k, v in tdict.items():
                 mask = self.log_variables_mask[k]
-                tdict[k][mask] = torch.exp(v[mask]) - 1.e-5
-                
+                if tdict[k].shape[0] != len(mask):
+                    tdict[k][:, mask] = torch.exp(v[:, mask]) - 1.e-5
+                else:
+                    tdict[k][mask] = torch.exp(v[mask]) - 1.e-5
+
             return tdict
         
 
