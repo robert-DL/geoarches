@@ -45,7 +45,7 @@ class WeatherEncodeDecodeLayer(nn.Module):
         circular_padding=False,
         forcings_embedding: ForcingsEmbedding | str | None = None,
         auto_move_to_device=True,
-        constant_mask_file="archesweather_constant_masks",
+        constant_mask_file="stats/archesweather_constant_masks.pt",
     ) -> None:
         """
         Args:

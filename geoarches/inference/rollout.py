@@ -5,11 +5,14 @@ import os
 import torch
 import hydra
 
+import torch.multiprocessing as mp
+
 import xarray as xr
 import numpy as np
 import pandas as pd
 
 from typing import Union, List
+from omegaconf import ListConfig
 
 from geoarches.main_hydra import collate_fn
 from geoarches.dataloaders import nan_util, era5, era5_constants
@@ -30,18 +33,45 @@ class Rollout:
         self.dataset = dataset
         self.lt = self.dataset.lead_time_hours
         self.output_path = output_path
+        # True NaN mask (e.g. land for an ocean-only variable), captured once from the
+        # raw initial batch before any interpolation. Model predictions never contain
+        # real NaNs, so this persistent mask is what apply_nan_mask uses to reset/fill
+        # those positions on every rollout step. Set in rollout() once the batch is built.
+        self.nan_mask = None
 
         os.makedirs(output_path, exist_ok=True)
 
-    def apply_nan_mask(self, x, fill_nans=False):
+    def call_model(self, batch):
+        """Runs one forecast step, dispatching to the right calling convention
+        depending on whether the underlying module is a diffusion model."""
+        if self.is_diffusion:
+            return self.module.sample(
+                batch,
+                seed=self.member_idx,
+                scale_input_noise=self.scale_input_noise,
+                num_steps=self.num_steps,
+            )
+        return self.module(batch)
+
+    def process_output(self, output):
+        """Denormalizes model output, clips physically non-negative variables,
+        and fills any remaining NaNs, in preparation for saving to disk."""
+    
+        output = self.dataset.denormalize(output)
+        output = self.dataset.invert_log_transform(output)
+        output = self.truncate_non_negative(output)
+        output = self.apply_nan_mask(output, fill_nans=True, nan_mask=self.nan_mask)
+        return output
+
+    def apply_nan_mask(self, x, fill_nans=False, nan_mask=None):
 
         if fill_nans:
             x = nan_util.post_norm_interpolate_nans(
-                x, "reset_nans"
+                x, "reset_nans", nan_mask=nan_mask
             )
         else:
             x = nan_util.post_norm_interpolate_nans(
-                    x, self.dataset.interpolate_input
+                    x, self.dataset.interpolate_input, nan_mask=nan_mask
             )
         return x
 
@@ -89,7 +119,16 @@ class Rollout:
 
         # Update conditioning
         batch["prev_state"] = torch.clone(batch["state"])
-        batch["state"] = self.apply_nan_mask(torch.clone(output), False)
+
+        # Get cloned version and apply proper chain to get values right
+        cout = torch.clone(output)
+        cout = self.dataset.invert_log_transform(self.dataset.denormalize(cout))
+        cout = self.truncate_non_negative(cout)
+        cout = self.dataset.apply_log_transform(cout)
+        cout = self.dataset.normalize(cout)
+
+        batch["state"] = self.apply_nan_mask(cout, False, nan_mask=self.nan_mask)
+
 
         # Forcings if applicable. load_forcings() internally looks up forcings for
         # (timestamp + lead_time_hours), so we must query it with the timestamp of
@@ -144,8 +183,8 @@ class Forecast(Rollout):
     def __init__(
             self,
             module: Union[AvgModule, ForecastModuleWithCond, DiffusionModule],
-            forecast_steps: int, 
             dataset: era5.Era5Forecast,
+            forecast_steps: int, 
             output_path,
             member_idx=0,
             scale_input_noise=1.0,
@@ -160,62 +199,80 @@ class Forecast(Rollout):
         self.scale_input_noise = scale_input_noise
         self.num_steps = num_steps
 
-    def call_model(self, batch):
-        """Runs one forecast step, dispatching to the right calling convention
-        depending on whether the underlying module is a diffusion model."""
-        if self.is_diffusion:
-            return self.module.sample(
-                batch,
-                seed=self.member_idx,
-                scale_input_noise=self.scale_input_noise,
-                num_steps=self.num_steps,
-            )
-        return self.module(batch)
 
-    def process_output(self, output):
-        """Denormalizes model output, clips physically non-negative variables,
-        and fills any remaining NaNs, in preparation for saving to disk."""
-        output = self.dataset.denormalize(output)
-        output = self.truncate_non_negative(output)
-        output = self.apply_nan_mask(output, fill_nans=True)
-        return output
+    def dump_preds(self, preds, init_timestamp):
 
-    def dump_preds(self, preds, year, init_datestring):
-        print(f"Dumping data for year {year}")
         xrdataset = xr.concat(preds, dim="time")
-        xrdataset.to_netcdf(self.output_path + f"/output_{init_datestring}.nc")
+
+        xrdataset = xrdataset.rename({"time": "lead_time"})
+
+        xrdataset = xrdataset.assign_coords(
+            {"lead_time": self.lt * np.arange(1, xrdataset.lead_time.size+1)}
+        )
+        xrdataset = xrdataset.expand_dims(
+            dim={"time":  pd.to_datetime(init_timestamp.unsqueeze(0), unit="s")},
+            axis=0
+        )
+
+        init_datestring = pd.to_datetime(
+            init_timestamp, unit="s").strftime("%Y-%m-%dT%H")
+        xrdataset.to_netcdf(
+            self.output_path + f"/output_{init_datestring}.nc")
 
     @torch.no_grad()
-    def rollout(self, start_datestring, end_datestring=None, freq=None, periods=None):
-        dates, initial_batch = super().rollout(start_datestring, end_datestring, freq, periods)
+    def rollout(
+        self, start_datestring, end_datestring=None, 
+        freq=None, periods=None, days_of_month=None
+    ):
+        dates, _ = super().rollout(
+            start_datestring, end_datestring, freq, periods)
 
-        # Add batch dim
-        initial_batch = collate_fn([initial_batch])
+        if days_of_month is None:
+            dates = dates 
+        else: 
+            dates = dates[dates.day.isin(days_of_month)]
 
-        # Move to correct device
-        batch = {k: v.to(self.module.device) for k, v in initial_batch.items()}
 
         preds = []
         preds_year = None
-        for _ in dates:
-            init_timestamp = batch["timestamp"].detach().cpu()
+        for date in dates:
+            batch = self.dataset.select_from_nptime(date.to_numpy())
+            batch = collate_fn([batch])
 
-            for step in range(self.num_forecast_steps):
+            # Move to correct device
+            batch = {k: v.to(self.module.device) for k, v in batch.items()}
+            self.nan_mask = batch.get("nan_mask")
+
+            init_timestamp = batch["timestamp"].detach().cpu()[0]
+            print(
+                pd.to_datetime(
+                    init_timestamp, unit="s").strftime("%Y-%m-%dT%H")
+            )
+            print("------------------------------")
+            for step in range(self.forecast_steps):
+                if step % 5 == 0: print(f"[{step}/{self.forecast_steps}]")
                 output = self.call_model(batch)
                 batch = self.advance_batch(batch, output)
 
                 output = self.process_output(output)
-                preds.append(self.dataset.convert_to_xarray(output, timestamp=init_timestamp))
-
+                preds.append(
+                    self.dataset.convert_to_xarray(
+                        output, 
+                        timestamp=batch["timestamp"].detach().cpu()
+                    )
+                )
 
             # Dump and reset accumulated predictions whenever we cross a year boundary,
             # so that each output file only ever holds a single calendar year.
-          
-            self.dump_preds(preds, preds_year, pd.to_datetime(init_timestamp, unit="s").strftime("%Y-%m-%dT%H"))
-            preds = []
+            self.dump_preds(
+                preds, 
+                init_timestamp,
+            )
 
-        if len(preds) > 0:
-            self.dump_preds(preds, preds_year)
+            preds = []
+            
+            print("------------------------------\n")
+
 
 class ClimateRollout(Rollout):
     """
@@ -256,13 +313,7 @@ class ClimateRollout(Rollout):
             )
         return self.module(batch)
 
-    def process_output(self, output):
-        """Denormalizes model output, clips physically non-negative variables,
-        and fills any remaining NaNs, in preparation for saving to disk."""
-        output = self.dataset.denormalize(output)
-        output = self.truncate_non_negative(output)
-        output = self.apply_nan_mask(output, fill_nans=True)
-        return output
+
 
     def dump_preds(self, preds, year):
         print(f"Dumping data for year {year}")
@@ -278,6 +329,7 @@ class ClimateRollout(Rollout):
 
         # Move to correct device
         batch = {k: v.to(self.module.device) for k, v in initial_batch.items()}
+        self.nan_mask = batch.get("nan_mask")
 
         preds = []
         preds_year = None
@@ -296,27 +348,91 @@ class ClimateRollout(Rollout):
                 preds = []
 
             preds_year = year
-            preds.append(self.dataset.convert_to_xarray(output, timestamp=timestamp))
+            preds.append(
+                self.dataset.convert_to_xarray(
+                    self.apply_nan_mask(output, True, nan_mask=self.nan_mask), timestamp=timestamp
+                )
+            )
 
         if len(preds) > 0:
             self.dump_preds(preds, preds_year)
 
 
-@hydra.main(config_path="../configs", config_name="rollout")
-def main(cfg):
 
+def _setup(cfg, modelpath, device="auto"):
     # Load model(s)
-    module, mod_cfg = load_module(cfg.modelpaths, return_config=True)
+    module, mod_cfg = load_module(modelpath, device=device, return_config=True)
 
     dataset = hydra.utils.instantiate(
         mod_cfg.dataloader.dataset, mod_cfg.stats, domain=cfg.rollout_domain
     )
 
-    # Load rollout module
-    rollout_op = hydra.utils.instantiate(cfg.rollout, module, dataset)
+    return module, dataset
 
+
+def _as_list(modelpaths):
+    if isinstance(modelpaths, (list, ListConfig)):
+        return list(modelpaths)
+    return [modelpaths]
+
+
+def multiprocess(rank, world_size, cfg):
+    """Runs one rollout process pinned to a single GPU (`rank`).
+
+    If `cfg.modelpaths` holds several paths, each process loads a different
+    (independently trained) model, one per GPU. Otherwise, a single model is
+    loaded on every process and each is assigned a different ensemble member
+    (`member_idx=rank`), which only matters for a diffusion model.
+    """
+    torch.cuda.set_device(rank)
+    device = f"cuda:{rank}"
+
+    modelpaths = _as_list(cfg.modelpaths)
+    is_ensemble = len(modelpaths) > 1
+    modelpath = modelpaths[rank] if is_ensemble else modelpaths[0]
+
+    module, dataset = _setup(cfg, modelpath, device=device)
+
+    # Keep each process' outputs separate so parallel runs don't overwrite
+    # each other: one output dir per model when running distinct models,
+    # one per member when running the same (diffusion) model repeatedly.
+    suffix = os.path.basename(str(modelpath).rstrip("/")) if is_ensemble else f"member_{rank}"
+    output_path = os.path.join(
+        os.path.dirname(cfg.rollout.output_path.rstrip("/")), suffix
+    )
+
+    rollout_op = hydra.utils.instantiate(
+        cfg.rollout, module, dataset, output_path=output_path, member_idx=rank
+    )
     rollout_op.rollout(**cfg.rollout_kwargs)
 
 
+@hydra.main(config_path="../configs", config_name="rollout")
+def main(cfg):
+    ngpus = torch.cuda.device_count()
+    modelpaths = _as_list(cfg.modelpaths)
+
+    if len(modelpaths) > 1:
+        # One distinct model per GPU.
+        nprocs = len(modelpaths)
+    elif ngpus > 1:
+        # Single model: use every GPU on the node to run one ensemble
+        # member each (relevant for diffusion models).
+        nprocs = ngpus
+    else:
+        nprocs = 1
+
+    if nprocs > 1:
+        assert nprocs <= ngpus, (
+            f"Requested {nprocs} process(es) but only {ngpus} GPU(s) are visible."
+        )
+        mp.spawn(multiprocess, args=(nprocs, cfg), nprocs=nprocs)
+        return
+
+    module, dataset = _setup(cfg, modelpaths[0])
+
+    # Load rollout module
+    rollout_op = hydra.utils.instantiate(cfg.rollout, module, dataset)
+    rollout_op.rollout(**cfg.rollout_kwargs)
 if __name__ == "__main__":
     main()

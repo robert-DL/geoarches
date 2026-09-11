@@ -22,7 +22,7 @@ from lightning.pytorch.loggers.csv_logs import ExperimentWriter
 
 
 ############## PLOT SETTINGS ###################
-mpl.rcParams["lines.linewidth"] = 2
+mpl.rcParams["lines.linewidth"] = 1.5
 
 base_colors = [
     [0,0,0],
@@ -118,7 +118,6 @@ class RunningEMA:
 
             return self._data[i]
             
-
     def compute_rma(self, array):
         self._data = np.copy(array)
         for k in range(1, (len(self._data) - self.window_size) // self.window_size + 1):
@@ -254,14 +253,16 @@ if __name__ == "__main__":
     vlogs = VisualizeLogs(
         exp_dir=exp_dir,
         modelnames=[
-            "archesW-s2s-0",
-            "archesW-s2s-1",
-            "archesW-s2s-doy-0",
-            "archesW-s2s-doy-1",
             "archesW-s2s-2x2-0",
-            "archesW-s2s-2x2-1",
             "archesW-s2s-2x2-doy-0",
             "archesW-s2s-2x2-doy-1",
+            "archesW-s2s-2x2-doy-2",
+            "archesW-s2s-2x2-doy-3",
+            "archesW-s2s-2x2-cp-doy-0",
+            "archesW-s2s-2x2-LE-doy-0",
+            "archesW-s2s-2x2-LE-doy-1",
+            "archesW-s2s-2x2-LE-cp-doy-0",
+            "archesW-s2s-2x2-cp-wo-sst-doy-0",
         ],
         apply_smoothing=True,
         ema_weight=0.7

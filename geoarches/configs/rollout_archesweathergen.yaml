@@ -1,0 +1,14 @@
+modelpaths: ${oc.env:GEOARCHES}/modelstore/aimip-archesweathergen
+rollout_domain: "aimip_rollout"
+
+rollout:
+  _target_: geoarches.inference.rollout.ClimateRollout
+  output_path: ${oc.env:GEOARCHES}/data/outputs/climate/aimip-archesweathergen
+  member_idx: 0
+  scale_input_noise: 1.0
+  num_steps: 25
+
+rollout_kwargs:
+  start_datestring: "1978-10-01"
+  end_datestring:  "2024-12-31"
+  freq: "1D"
