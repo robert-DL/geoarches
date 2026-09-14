@@ -1,9 +1,9 @@
-modelpaths: ${oc.env:GEOARCHES}/modelstore/archesW-s2s-2x2-doy-0
+modelpaths: ${oc.env:GEOARCHES}/modelstore/archesW-s2s-2x2-cp-doy-0
 rollout_domain: "aimip_rollout"
 
 rollout: 
   _target_: geoarches.inference.rollout.Forecast
-  output_path: ${oc.env:GEOARCHES}/data/outputs/s2s/archesW-s2s-2x2-doy-0
+  output_path: ${oc.env:GEOARCHES}/data/outputs/s2s/archesW-s2s-2x2-cp-doy-0
   forecast_steps: 42
 
 rollout_kwargs:

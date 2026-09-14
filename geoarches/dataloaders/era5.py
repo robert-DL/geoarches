@@ -31,6 +31,8 @@ def _accept_all_filenames(_: str) -> bool:
 def _accept_no_filenames(_: str) -> bool:
     return False
 
+def _all_2021(x: str) -> bool:
+    return (any([str(y) in x for y in range(1978,2022)]))
 
 def _is_last_train(x: str) -> bool:
     return "2018" in x
@@ -71,7 +73,6 @@ def _is_aimip_train(x: str) -> bool:
 def _is_aimip_trainval(x: str) -> bool:
     return any(str(y) in x for y in range(1979, 2016))
 
-
 def _is_aimip_val(x: str) -> bool:
     return "2013" in x or "2014" in x or "2015" in x
 
@@ -94,6 +95,7 @@ def _is_aimip_rollout_z0012(x: str) -> bool:
 # is required when DataLoader workers are started with multiprocessing_context="spawn".
 filename_filters = dict(
     all=_accept_all_filenames,
+    all_2021=_all_2021,
     empty=_accept_no_filenames,
     last_train=_is_last_train,
     last_train_z0012=_is_last_train_z0012,
@@ -110,6 +112,7 @@ filename_filters = dict(
     # We read the years before and after (see above comment for why).
     aimip_train=_is_aimip_train,
     aimip_trainval=_is_aimip_trainval,
+    aimip_trainval_24=_is_aimip_trainval
     aimip_val=_is_aimip_val,
     aimip_rollout_full=_is_aimip_rollout_full,
     aimip_rollout=_is_aimip_rollout,
@@ -144,6 +147,11 @@ domain_time_info = {
         start_time="1940-01-01T00:00:00",
         end_time="2025-12-31T18:00:00",
         timedelta=6,
+    ),
+    "all_2021": DomainTimeInfo(
+        start_time="1978-01-01T00:00:00",
+        end_time="2021-12-31T18:00:00",
+        timedelta=24,
     ),
     "train": DomainTimeInfo(
         start_time="1979-01-01T00:00:00",
@@ -198,6 +206,11 @@ domain_time_info = {
         end_time="2024-12-31T18:00:00",
         timedelta=24,
     ),
+    "aimip_trainval_24": DomainTimeInfo(
+            start_time="1978-09-30T00:00:00",
+            end_time="2024-12-31T18:00:00",
+            timedelta=24,
+        ),
     "aimip_rollout_z00": DomainTimeInfo(
         start_time="1978-09-30T00:00:00",
         end_time="2024-12-31T00:00:00",
@@ -718,7 +731,7 @@ class Era5Forecast(Era5Dataset):
         out["day_of_month"] = torch.tensor(timestamp.day)
         out["day_of_year"] = torch.tensor(timestamp.dayofyear)
         out["month"] = torch.tensor(timestamp.month)
-
+        print("State time: ", end="")
         out["state"], out["nan_mask"] = super().__getitem__(
             i,
             return_nan_mask=True,
@@ -751,6 +764,7 @@ class Era5Forecast(Era5Dataset):
             )
 
         if self.load_prev:
+            print("Prev State time: ", end="")
             out["prev_state"] = super().__getitem__(
                 i - self.lead_time_hours // self.timedelta,
                 interpolate_nans=self.interpolate_input,

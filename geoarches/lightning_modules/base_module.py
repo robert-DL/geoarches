@@ -125,7 +125,7 @@ class AvgModule(L.LightningModule):
     Wrapper around several lightning modules to run forward and compute average prediction.
     """
 
-    def __init__(self, module_paths):
+    def __init__(self, module_paths, device: str = "auto"):
         super().__init__()
         path = module_paths[0]
         if Path("modelstore").joinpath(path).exists():
@@ -133,7 +133,9 @@ class AvgModule(L.LightningModule):
         else:
             path = Path(path)
         self.cfg = OmegaConf.load(str(path / "config.yaml"))
-        self.core = nn.ModuleList([load_module(p, return_config=False) for p in module_paths])
+        self.core = nn.ModuleList(
+            [load_module(p, device=device, return_config=False) for p in module_paths]
+        )
 
     def forward(self, *args, **kwargs):
         return torch.stack([m.forward(*args, **kwargs) for m in self.core], dim=0).mean(dim=0)

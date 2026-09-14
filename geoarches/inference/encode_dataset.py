@@ -350,8 +350,13 @@ def _encode_worker(rank: int, world_size: int, args) -> None:
     3. Runs the iterative forecast loop and writes per-year NetCDF files.
     """
     device = f"cuda:{rank}" if torch.cuda.is_available() else "cpu"
-    if torch.cuda.is_available():
-        torch.cuda.set_device(rank)
+    # NOTE: CUDA is intentionally *not* initialized here (no set_device / .to(device)
+    # yet). The DataLoader below uses multiprocessing_context="fork", and forking a
+    # process that has already touched CUDA crashes the forked workers with a
+    # segfault (the driver's internal locks/mappings aren't fork-safe) -- this is
+    # especially reliable on aarch64/GH200 nodes. The model is kept on CPU and CUDA
+    # is initialized only after the DataLoader's worker processes have been forked;
+    # see below.
     torch.set_grad_enabled(False)
 
     # ── Parsed args ───────────────────────────────────────────────────────────
@@ -369,11 +374,11 @@ def _encode_worker(rank: int, world_size: int, args) -> None:
 
     # ── Load model ────────────────────────────────────────────────────────────
     if len(model_uids) > 1:
-        module = AvgModule(model_uids).to(device).eval()
+        module = AvgModule(model_uids, device="cpu").eval()
         cfg = module.cfg
     else:
-        module, cfg = load_module(model_uids[0])
-        module.to(device).eval()
+        module, cfg = load_module(model_uids[0], device="cpu")
+        module.eval()
 
     # ── Paths & step dirs ─────────────────────────────────────────────────────
     input_path = Path(cfg.dataloader.dataset.path).resolve()
@@ -397,7 +402,7 @@ def _encode_worker(rank: int, world_size: int, args) -> None:
         print(f"Devices  : {world_size}")
 
     # ── Instantiate full dataset (unfiltered) to discover all years ───────────
-    ds = instantiate(cfg.dataloader.dataset, cfg.stats, domain="all")
+    ds = instantiate(cfg.dataloader.dataset, cfg.stats, domain="aimip_trainval_24")
     inferred_tdelta = _infer_timedelta_hours_from_timestamps(ds)
     if inferred_tdelta is not None and getattr(ds, "timedelta", None) != inferred_tdelta:
         if rank == 0:
@@ -508,11 +513,19 @@ def _encode_worker(rank: int, world_size: int, args) -> None:
         collate_fn=collate_fn,
     )
 
+    # Force the DataLoader's worker processes to fork now, while this process is
+    # still CPU-only. Only after the fork do we touch CUDA (see NOTE above).
+    it = iter(dl)
+
+    if torch.cuda.is_available():
+        torch.cuda.set_device(rank)
+    module.to(device)
+
     # ── Encoding loop ─────────────────────────────────────────────────────────
     xr_lists_by_year: dict[int, dict[int, list]] = {}
     current_init_year: int | None = None
 
-    for i, batch in tqdm(enumerate(dl), desc=f"GPU {rank}", total=len(dl)):
+    for i, batch in tqdm(enumerate(it), desc=f"GPU {rank}", total=len(dl)):
         # Filter by initialisation hour
         batch_hour = pd.to_datetime(batch["timestamp"][0], utc=True, unit="s").hour
         print("Datetime:", pd.to_datetime(batch["timestamp"][0], unit="s").tz_localize(None))
