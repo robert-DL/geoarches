@@ -81,6 +81,16 @@ class DiffusionModule(BaseLightningModule):
             else:
                 # load averaging model
                 self.det_model = AvgModule(load_deterministic_model)
+            # det_model is a fixed pretrained ensemble only ever called under
+            # sample_rollout's torch.set_grad_enabled(False) -- it produces no
+            # gradients. Freeze it (removing its params from DDP's expected
+            # gradient-sync set, which otherwise crashes with "unused
+            # parameters") and keep it in eval mode permanently: Lightning
+            # puts the whole LightningModule (submodules included) back into
+            # train() at the start of every training epoch, which would
+            # otherwise re-enable det_model's dropout/batchnorm each time.
+            self.det_model.requires_grad_(False)
+            self.det_model.eval()
 
         # cond_dim should be given as arg to the backbone
         # State time conditioning.
@@ -162,6 +172,16 @@ class DiffusionModule(BaseLightningModule):
             out = (noisy_next_state - out).apply(lambda x: x / sigmas)
 
         return out
+
+    def train(self, mode: bool = True):
+        # Keep det_model (frozen pretrained ensemble, see __init__) in eval
+        # mode regardless -- Lightning calls .train() on the whole module
+        # (submodules included) at the start of every training epoch, which
+        # would otherwise flip det_model's dropout/batchnorm back on.
+        super().train(mode)
+        if self.det_model is not None:
+            self.det_model.eval()
+        return self
 
     def training_step(self, batch, batch_nb):
         # sample timesteps
