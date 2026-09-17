@@ -59,6 +59,7 @@ from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).parent.parent))
 
+from geoarches.dataloaders import era5_constants
 from geoarches.lightning_modules.base_module import AvgModule, load_module
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -180,6 +181,30 @@ def _fill_land_points(prediction, nan_mask, nan_replacement, variables):
         return prediction
 
     raise ValueError(f"Unsupported nan_replacement strategy: {nan_replacement!r}")
+
+
+def _truncate_non_negative(tdict, variables):
+    """Clip physically non-negative variables (e.g. precipitation, OLR) to >= 0.
+
+    Mirrors Rollout.truncate_non_negative(); needed here because inverting the
+    log transform (exp(x) - eps) can yield small negative values for near-zero
+    physical quantities.
+    """
+    for key in ("surface", "level"):
+        if key not in tdict:
+            continue
+        x = tdict[key]
+        mask = torch.tensor(
+            [v in era5_constants.non_negative_variables for v in variables[key]],
+            dtype=torch.bool,
+            device=x.device,
+        )
+        if not mask.any():
+            continue
+        shape = [1] * x.dim()
+        shape[-4] = mask.numel()
+        tdict[key] = torch.where(mask.reshape(shape), x.clamp(min=0), x)
+    return tdict
 
 
 def _apply_nan_mask(prediction, nan_mask):
@@ -507,7 +532,7 @@ def _encode_worker(rank: int, world_size: int, args) -> None:
     dl = torch.utils.data.DataLoader(
         torch.utils.data.Subset(ds, todo_indices),
         batch_size=1,
-        num_workers=4,
+        num_workers=1,
         multiprocessing_context="fork",
         shuffle=False,
         collate_fn=collate_fn,
@@ -528,7 +553,6 @@ def _encode_worker(rank: int, world_size: int, args) -> None:
     for i, batch in tqdm(enumerate(it), desc=f"GPU {rank}", total=len(dl)):
         # Filter by initialisation hour
         batch_hour = pd.to_datetime(batch["timestamp"][0], utc=True, unit="s").hour
-        print("Datetime:", pd.to_datetime(batch["timestamp"][0], unit="s").tz_localize(None))
         if encode_hours is not None and batch_hour not in encode_hours:
             continue
 
@@ -562,11 +586,27 @@ def _encode_worker(rank: int, world_size: int, args) -> None:
                     # NOTE: if the model uses dynamic forcings, load the
                     # appropriate forcing slice for the new timestamp here.
 
-                out = module.forward(cur)
+                raw_out = module.forward(cur)
 
                 # Fill land grid points so recycling as the next input is
                 # physically consistent.
-                out = _fill_land_points(out, nan_mask, args.nan_replacement, ds.variables)
+                raw_out = _fill_land_points(raw_out, nan_mask, args.nan_replacement, ds.variables)
+
+                # Round-trip through physical space at *every* step (not just the
+                # requested output steps): invert the log transform and clip
+                # physically non-negative variables (precip, OLR, ...). `out` is
+                # recycled as the next step's model input, so skipping this here
+                # would let un-truncated negative-log values drift the rollout
+                # out-of-distribution -- mirrors Rollout.advance_batch() in
+                # rollout.py, which does the same
+                # denormalize -> invert_log -> truncate -> apply_log -> normalize
+                # round trip on every recycled step.
+                phys_out = ds.denormalize(raw_out)
+                phys_out = ds.invert_log_transform(phys_out)
+                phys_out = _truncate_non_negative(phys_out, ds.variables)
+
+                # Re-encode to log/normalized space to feed as next step's input.
+                out = ds.normalize(ds.apply_log_transform(torch.clone(phys_out)))
 
                 if step in forecast_steps_set:
                     pred_ts = cur["timestamp"] + lead_time_hours * 3600
@@ -574,8 +614,7 @@ def _encode_worker(rank: int, world_size: int, args) -> None:
                     if pred_year not in todo_years_set:
                         continue
 
-                    denorm_out = ds.denormalize(out.cpu())
-                    denorm_out = _apply_nan_mask(denorm_out, nan_mask)
+                    denorm_out = _apply_nan_mask(phys_out.cpu(), nan_mask)
                     if pred_year not in xr_lists_by_year:
                         xr_lists_by_year[pred_year] = _new_step_bucket(forecast_steps_set)
                     xr_lists_by_year[pred_year][step].append(

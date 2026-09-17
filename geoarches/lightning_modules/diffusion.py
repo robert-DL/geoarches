@@ -17,6 +17,7 @@ from geoarches.dataloaders import zarr
 from geoarches.lightning_modules import BaseLightningModule
 from geoarches.utils.tensordict_utils import tensordict_apply, tensordict_cat
 
+from geoarches.utils.batch_utils import advance_batch
 
 class DiffusionModule(BaseLightningModule):
     """
@@ -373,32 +374,33 @@ class DiffusionModule(BaseLightningModule):
 
         preds_future = []
         loop_batch = {k: v for k, v in batch.items()}
-        add_prev_state = "prev_state" in loop_batch
-        add_forcings = "future_forcings" in loop_batch
+
+
+        # self.trainer raises (rather than returning None) when unattached, so
+        # check the underlying _trainer attribute directly.
+        if self._trainer is None:
+            assert "dataset" in kwargs.keys()
+            ds = kwargs.pop("dataset")
+        else:
+            if self.trainer.training:
+                ds = self.trainer.train_dataloader.dataset
+            elif self.trainer.validating:
+                ds = self.trainer.val_dataloaders.dataset
+            else:
+                ds = self.trainer.test_dataloaders.dataset
 
         for i in tqdm(range(iterations), disable=disable_tqdm):
             seed_i = member + 1000 * i + batch_nb * 10**6
             sample = self.sample(loop_batch, seed=seed_i, disable_tqdm=True, **kwargs)
             preds_future.append(sample)
-            times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
-            next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
-
-            if update_fnc is not None:
-                loop_batch = update_fnc(loop_batch, sample, iteration=i)
-            else:
-                loop_batch = dict(
-                    prev_state=loop_batch["state"] if add_prev_state else None,
-                    state=sample,
-                    timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
-                    hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
-                    month=torch.tensor(next_month).to(self.device),
-                    forcings=loop_batch["future_forcings"][:, 0] if add_forcings else None,
-                    future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
-                )
-
+                
+            advance_batch(loop_batch, sample, dataset=ds, nan_mask=loop_batch["nan_mask"])
+            
         if return_format == "list":
             return preds_future
+        
         preds_future = torch.stack(preds_future, dim=1)
+
         return preds_future
 
     def validation_step(self, batch, batch_nb):

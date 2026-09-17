@@ -1,5 +1,9 @@
 modelpaths: ${oc.env:GEOARCHES}/modelstore/aimip-archesweathergen
 rollout_domain: "aimip_rollout"
+# Ensemble size for this generative model: num_members seeded samples of the
+# same model, spread round-robin across the available GPUs (independent of
+# GPU count -- unlike rollout.yaml's modelpaths-based ensembling).
+num_members: 4
 
 rollout:
   _target_: geoarches.inference.rollout.ClimateRollout
@@ -10,5 +14,6 @@ rollout:
 
 rollout_kwargs:
   start_datestring: "1978-10-01"
-  end_datestring:  "2024-12-31"
+  end_datestring:  "1978-12-31"
   freq: "1D"
+  inference_time: True

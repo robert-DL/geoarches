@@ -292,7 +292,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         interpolate_nans = self.interpolate_nans if interpolate_nans is None else interpolate_nans
         warning_on_nan = self.warning_on_nan if warning_on_nan is None else warning_on_nan
 
-        fname, line_id, _ = self.id2pt[i]
+        fname, line_id, time = self.id2pt[i]
 
         if self.cached_fname != fname:
             if self.cached_xrdataset is not None:

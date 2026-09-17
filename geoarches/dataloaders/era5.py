@@ -112,7 +112,7 @@ filename_filters = dict(
     # We read the years before and after (see above comment for why).
     aimip_train=_is_aimip_train,
     aimip_trainval=_is_aimip_trainval,
-    aimip_trainval_24=_is_aimip_trainval
+    aimip_trainval_24=_is_aimip_trainval,
     aimip_val=_is_aimip_val,
     aimip_rollout_full=_is_aimip_rollout_full,
     aimip_rollout=_is_aimip_rollout,
@@ -731,7 +731,6 @@ class Era5Forecast(Era5Dataset):
         out["day_of_month"] = torch.tensor(timestamp.day)
         out["day_of_year"] = torch.tensor(timestamp.dayofyear)
         out["month"] = torch.tensor(timestamp.month)
-        print("State time: ", end="")
         out["state"], out["nan_mask"] = super().__getitem__(
             i,
             return_nan_mask=True,
@@ -764,7 +763,6 @@ class Era5Forecast(Era5Dataset):
             )
 
         if self.load_prev:
-            print("Prev State time: ", end="")
             out["prev_state"] = super().__getitem__(
                 i - self.lead_time_hours // self.timedelta,
                 interpolate_nans=self.interpolate_input,

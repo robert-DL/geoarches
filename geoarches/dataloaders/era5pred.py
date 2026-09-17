@@ -22,6 +22,8 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         dimension_indexers=era5.default_dimension_indexers,
         pred_dimension_indexers=None,
         interpolate_input: nan_util.NanInterpolationMethod | None = None,
+        forecast_lag=None,
+        information_lag=None,
         **kwargs,
     ):
         """Args:
@@ -44,7 +46,13 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         mapped by their keys to be processed into tensordict.
             e.g. {surface:[...], level:[...] By default uses standard 6 level
             and 4 surface vars.
+        forecast_lag: Number of lead_time_hours steps ahead of the current state
+        that pred_path's files are valid at (e.g. 1 for a "step01"/1-step-ahead
+        prediction store). Used to look up pred_ds at the same valid time as
+        next_state, which is what pred_state is meant to be compared against.
+            Defaults to 1.
         """
+        self.forecast_lag = 1 if forecast_lag is None else forecast_lag
         super().__init__(
             stats_cfg=stats_cfg,
             path=path,
@@ -65,7 +73,7 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
             self.pred_ds = era5.Era5Dataset(
                 path=pred_path,
                 domain="all",
-                dimension_indexers=dimension_indexers | (pred_dimension_indexers or {}),
+                dimension_indexers={**dimension_indexers, **(pred_dimension_indexers or {})},
                 filename_filter=self.filename_filter,
                 variables=self.variables,
                 interpolate_nans=interpolate_input,
@@ -85,8 +93,25 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         out = super().__getitem__(i)
 
         if hasattr(self, "pred_ds"):
-            nptime = np.datetime64(out["timestamp"].int().item(), "s")
+            # pred_ds is indexed by its own prediction's valid time, i.e. current
+            # state time + forecast_lag * lead_time_hours (state time + 1 lead
+            # time for a "step01" store) -- the same valid time as next_state,
+            # which pred_state is meant to be compared against.
+            pred_timestamp = (
+                out["timestamp"].int().item()
+                + self.forecast_lag * self.lead_time_hours * 3600
+            )
+            nptime = np.datetime64(pred_timestamp, "s")
             pred_state = self.pred_ds.select_from_nptime(nptime)
+            # pred_ds holds predictions in physical units (pred_ds itself is built
+            # with log_variables=None, see __init__), but self.normalize() uses stats
+            # computed on log-transformed values for log_variables (e.g. total
+            # precipitation, olr) -- same as "state"/"next_state", which go through
+            # apply_log_transform() inside convert_to_tensordict() before normalize()
+            # is ever called on them. Apply the same log transform here first so
+            # pred_state lands in the same normalized space as state/next_state
+            # (needed for next_state - pred_state to be a meaningful residual).
+            pred_state = self.apply_log_transform(pred_state)
             normalized_pred_state = self.normalize(pred_state)
             # Interpolate Nans after normalize (ie. if filling with zeros).
             out["pred_state"] = nan_util.post_norm_interpolate_nans(

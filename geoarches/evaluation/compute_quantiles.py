@@ -60,20 +60,67 @@ if __name__ == "__main__":
     )
     print(f"Computing quantiles over {len(files)} files.")
 
-    def _preprocess(ds):
-        out = ds
-        if args.vars:
-            out = out[args.vars]
-        return out
-
     engine = "netcdf4" if args.input_data_file_extension == ".nc" else "zarr"
-    ds = xr.open_mfdataset(
-        files, concat_dim="time", combine="nested", preprocess=_preprocess, engine=engine
-    )
-    # Rechunk time into a single chunk (Required for quantile computation).
-    ds = ds.chunk({"time": -1})
-
     q = np.array([0.01, 0.1, 1, 99, 99.9, 99.99]) / 100
-    quantile_ds = ds.quantile(q, dim="time")
 
+    # Loading every requested variable's full multi-year time series into one
+    # chunk at once (as a single open_mfdataset+quantile call would) is
+    # memory-heavy enough to get OOM-killed for the larger (level, 13-level)
+    # variables over several years. Process one variable at a time instead --
+    # peak memory is then bounded by the single largest variable rather than
+    # the sum of all of them -- and merge the per-variable quantile results
+    # at the end.
+    vars_to_process = list(args.vars) if args.vars else None
+    if vars_to_process is None:
+        with xr.open_dataset(files[0]) as sample:
+            vars_to_process = list(sample.data_vars)
+
+    def _open_var(var, level=None):
+        def _preprocess(ds, var=var, level=level):
+            out = ds.rename(
+                {
+                    k: v
+                    for k, v in {"valid_time": "time", "pressure_level": "level"}.items()
+                    if k in ds.dims
+                }
+            )
+            out = out[[var]]
+            if level is not None:
+                out = out.sel(level=[level])
+            return out
+
+        ds = xr.open_mfdataset(
+            files, concat_dim="time", combine="nested", preprocess=_preprocess, engine=engine
+        )
+        # Rechunk time into a single chunk (Required for quantile computation).
+        return ds.chunk({"time": -1})
+
+    with xr.open_dataset(files[0]) as sample:
+        var_levels = {
+            var: list(sample[var]["pressure_level" if "pressure_level" in sample[var].dims else "level"].values)
+            if var in sample and any(d in sample[var].dims for d in ("pressure_level", "level"))
+            else None
+            for var in vars_to_process
+        }
+
+    quantile_datasets = []
+    for var in vars_to_process:
+        levels = var_levels.get(var)
+        if levels is None:
+            # Surface variable: one (lat, lon, time) field fits comfortably in memory.
+            print(f"Computing quantiles for {var} ...")
+            quantile_datasets.append(_open_var(var).quantile(q, dim="time").compute())
+        else:
+            # Level variable: even a single variable's full multi-year time series
+            # across all pressure levels at once was enough to get OOM-killed over
+            # a long (35-year) year range. Loop one pressure level at a time too --
+            # peak memory is then bounded by a single (lat, lon, time) field -- and
+            # concat the per-level results back together for this variable.
+            per_level = []
+            for level in levels:
+                print(f"Computing quantiles for {var} @ level {level} ...")
+                per_level.append(_open_var(var, level=level).quantile(q, dim="time").compute())
+            quantile_datasets.append(xr.concat(per_level, dim="level"))
+
+    quantile_ds = xr.merge(quantile_datasets)
     quantile_ds.to_netcdf(args.save_path)

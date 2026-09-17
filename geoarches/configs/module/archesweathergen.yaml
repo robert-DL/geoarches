@@ -4,7 +4,6 @@ module:
   _target_: geoarches.lightning_modules.diffusion.DiffusionModule
   name: ${name}
   cond_dim: 256
-
   scheduler: flow
   prediction_type: sample
   beta_schedule: squaredcos_cap_v2 # useful only for ddim
@@ -12,7 +11,7 @@ module:
   uncond_proba: 0.0
 
   # what to learn
-  load_deterministic_model: modelstore/jzh-geoaw-m-seed0 # used to load preds if learn_residual="pred" and not loaded by dataloader from storage.
+  load_deterministic_model: Null # used to load preds if learn_residual="pred" and not loaded by dataloader from storage.
   learn_residual: pred  # "default" to just learn [next_state-state], "pred" to learn residual of deterministic model.
   conditional: prev+det # or prev+det for instance
 

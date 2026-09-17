@@ -1,9 +1,11 @@
 """
 Code to produce long-term rollouts with ArchesWeather and ArchesWeatherGen
 """
+import csv
 import os
 import torch
 import hydra
+import time
 
 import torch.multiprocessing as mp
 
@@ -74,6 +76,29 @@ class Rollout:
                     x, self.dataset.interpolate_input, nan_mask=nan_mask
             )
         return x
+
+    def _tic(self):
+        """Starts a wall-clock timer, synchronizing CUDA first so the elapsed time
+        (see _toc) reflects actual GPU work rather than async kernel queuing."""
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        return time.time()
+
+    def _toc(self, start):
+        """Stops a timer started with _tic() and returns the elapsed seconds."""
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        return time.time() - start
+
+    def _write_timings(self, timings, filename="timings.csv"):
+        """Writes accumulated (label, duration_seconds) rollout timings to a CSV
+        file in output_path, overwriting it with the full list on every call so
+        a killed/crashed run still leaves the timings measured so far on disk."""
+        path = os.path.join(self.output_path, filename)
+        with open(path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["label", "duration_seconds"])
+            writer.writerows(timings)
 
     def truncate_non_negative(self, tdict):
         """
@@ -221,20 +246,20 @@ class Forecast(Rollout):
 
     @torch.no_grad()
     def rollout(
-        self, start_datestring, end_datestring=None, 
-        freq=None, periods=None, days_of_month=None
+        self, start_datestring, end_datestring=None,
+        freq=None, periods=None, days_of_month=None, inference_time=False
     ):
         dates, _ = super().rollout(
             start_datestring, end_datestring, freq, periods)
 
         if days_of_month is None:
-            dates = dates 
-        else: 
+            dates = dates
+        else:
             dates = dates[dates.day.isin(days_of_month)]
-
 
         preds = []
         preds_year = None
+        timings = []
         for date in dates:
             batch = self.dataset.select_from_nptime(date.to_numpy())
             batch = collate_fn([batch])
@@ -249,6 +274,7 @@ class Forecast(Rollout):
                     init_timestamp, unit="s").strftime("%Y-%m-%dT%H")
             )
             print("------------------------------")
+            start = self._tic() if inference_time else None
             for step in range(self.forecast_steps):
                 if step % 5 == 0: print(f"[{step}/{self.forecast_steps}]")
                 output = self.call_model(batch)
@@ -257,7 +283,7 @@ class Forecast(Rollout):
                 output = self.process_output(output)
                 preds.append(
                     self.dataset.convert_to_xarray(
-                        output, 
+                        output,
                         timestamp=batch["timestamp"].detach().cpu()
                     )
                 )
@@ -265,13 +291,23 @@ class Forecast(Rollout):
             # Dump and reset accumulated predictions whenever we cross a year boundary,
             # so that each output file only ever holds a single calendar year.
             self.dump_preds(
-                preds, 
+                preds,
                 init_timestamp,
             )
 
+            if inference_time:
+                init_datestring = pd.to_datetime(
+                    init_timestamp, unit="s").strftime("%Y-%m-%dT%H")
+                duration = self._toc(start)
+                timings.append((init_datestring, duration))
+                print(f"Forecast dump for {init_datestring} took {duration:.2f}s")
+                self._write_timings(timings)
+
             preds = []
-            
+
             print("------------------------------\n")
+
+        return timings if inference_time else None
 
 
 class ClimateRollout(Rollout):
@@ -321,7 +357,7 @@ class ClimateRollout(Rollout):
         xrdataset.to_netcdf(self.output_path + f"/output_{year}.nc")
 
     @torch.no_grad()
-    def rollout(self, start_datestring, end_datestring=None, freq=None, periods=None):
+    def rollout(self, start_datestring, end_datestring=None, freq=None, periods=None, inference_time=False):
         dates, initial_batch = super().rollout(start_datestring, end_datestring, freq, periods)
 
         # Add batch dim
@@ -333,6 +369,8 @@ class ClimateRollout(Rollout):
 
         preds = []
         preds_year = None
+        timings = []
+        year_start = self._tic() if inference_time else None
         for _ in dates:
             output = self.call_model(batch)
             batch = self.advance_batch(batch, output)
@@ -345,6 +383,12 @@ class ClimateRollout(Rollout):
             # so that each output file only ever holds a single calendar year.
             if preds_year is not None and year != preds_year and len(preds) > 0:
                 self.dump_preds(preds, preds_year)
+                if inference_time:
+                    duration = self._toc(year_start)
+                    timings.append((preds_year, duration))
+                    print(f"Year {preds_year} rollout took {duration:.2f}s")
+                    self._write_timings(timings)
+                    year_start = self._tic()
                 preds = []
 
             preds_year = year
@@ -356,6 +400,13 @@ class ClimateRollout(Rollout):
 
         if len(preds) > 0:
             self.dump_preds(preds, preds_year)
+            if inference_time:
+                duration = self._toc(year_start)
+                timings.append((preds_year, duration))
+                print(f"Year {preds_year} rollout took {duration:.2f}s")
+                self._write_timings(timings)
+
+        return timings if inference_time else None
 
 
 
@@ -376,49 +427,75 @@ def _as_list(modelpaths):
     return [modelpaths]
 
 
-def multiprocess(rank, world_size, cfg):
-    """Runs one rollout process pinned to a single GPU (`rank`).
+def _rollout_members(cfg, module, dataset, modelpath, rank, world_size):
+    """Runs the rollout(s) assigned to this process/rank.
 
-    If `cfg.modelpaths` holds several paths, each process loads a different
-    (independently trained) model, one per GPU. Otherwise, a single model is
-    loaded on every process and each is assigned a different ensemble member
-    (`member_idx=rank`), which only matters for a diffusion model.
+    If `cfg.modelpaths` holds several paths, `modelpath` is one of several
+    independently trained models and this runs a single rollout for it
+    (`member_idx` is irrelevant here since it isn't the same model sampled
+    with different seeds).
+
+    Otherwise `modelpath` is a single model. For a diffusion model, the
+    ensemble size is `cfg.num_members`, generated by sampling the same model
+    with different seeds -- NOT by GPU count. Seeds are spread round-robin
+    across the `world_size` processes: this process handles seeds `rank`,
+    `rank + world_size`, `rank + 2*world_size`, ..., so `num_members` need
+    not equal, or be a multiple of, the number of processes/GPUs in use.
     """
+    is_ensemble = len(_as_list(cfg.modelpaths)) > 1
+
+    if is_ensemble:
+        suffix = os.path.basename(str(modelpath).rstrip("/"))
+        member_suffix_pairs = [(rank, suffix)]
+    else:
+        num_members = cfg.get("num_members", 1)
+        member_suffix_pairs = [
+            (member_idx, f"member_{member_idx}" if num_members > 1 else None)
+            for member_idx in range(rank, num_members, world_size)
+        ]
+
+    for member_idx, suffix in member_suffix_pairs:
+        # Keep each process' outputs separate so parallel/sequential runs
+        # don't overwrite each other: one output dir per model when running
+        # distinct models, one per member when sampling the same (diffusion)
+        # model repeatedly.
+        output_path = (
+            os.path.join(os.path.dirname(cfg.rollout.output_path.rstrip("/")), suffix)
+            if suffix is not None
+            else cfg.rollout.output_path
+        )
+
+        rollout_op = hydra.utils.instantiate(
+            cfg.rollout, module, dataset, output_path=output_path, member_idx=member_idx
+        )
+        rollout_op.rollout(**cfg.rollout_kwargs)
+
+
+def multiprocess(rank, world_size, cfg):
+    """Runs the rollout(s) assigned to this process, pinned to a single GPU (`rank`)."""
     torch.cuda.set_device(rank)
     device = f"cuda:{rank}"
 
     modelpaths = _as_list(cfg.modelpaths)
-    is_ensemble = len(modelpaths) > 1
-    modelpath = modelpaths[rank] if is_ensemble else modelpaths[0]
+    modelpath = modelpaths[rank] if len(modelpaths) > 1 else modelpaths[0]
 
     module, dataset = _setup(cfg, modelpath, device=device)
-
-    # Keep each process' outputs separate so parallel runs don't overwrite
-    # each other: one output dir per model when running distinct models,
-    # one per member when running the same (diffusion) model repeatedly.
-    suffix = os.path.basename(str(modelpath).rstrip("/")) if is_ensemble else f"member_{rank}"
-    output_path = os.path.join(
-        os.path.dirname(cfg.rollout.output_path.rstrip("/")), suffix
-    )
-
-    rollout_op = hydra.utils.instantiate(
-        cfg.rollout, module, dataset, output_path=output_path, member_idx=rank
-    )
-    rollout_op.rollout(**cfg.rollout_kwargs)
+    _rollout_members(cfg, module, dataset, modelpath, rank, world_size)
 
 
-@hydra.main(config_path="../configs", config_name="rollout")
+@hydra.main(config_path="../configs", config_name="rollout_archesweathergen")
 def main(cfg):
     ngpus = torch.cuda.device_count()
     modelpaths = _as_list(cfg.modelpaths)
+    num_members = cfg.get("num_members", 1)
 
     if len(modelpaths) > 1:
         # One distinct model per GPU.
         nprocs = len(modelpaths)
     elif ngpus > 1:
-        # Single model: use every GPU on the node to run one ensemble
-        # member each (relevant for diffusion models).
-        nprocs = ngpus
+        # Single (e.g. diffusion) model: spread cfg.num_members seeded
+        # ensemble members across as many GPUs as are useful.
+        nprocs = min(num_members, ngpus)
     else:
         nprocs = 1
 
@@ -430,9 +507,7 @@ def main(cfg):
         return
 
     module, dataset = _setup(cfg, modelpaths[0])
+    _rollout_members(cfg, module, dataset, modelpaths[0], rank=0, world_size=1)
 
-    # Load rollout module
-    rollout_op = hydra.utils.instantiate(cfg.rollout, module, dataset)
-    rollout_op.rollout(**cfg.rollout_kwargs)
 if __name__ == "__main__":
     main()
