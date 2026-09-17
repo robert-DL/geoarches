@@ -384,7 +384,10 @@ class DiffusionModule(BaseLightningModule):
         else:
             if self.trainer.training:
                 ds = self.trainer.train_dataloader.dataset
-            elif self.trainer.validating:
+            elif self.trainer.validating or self.trainer.sanity_checking:
+                # sanity_checking is a separate RunningStage from validating --
+                # Lightning's pre-fit sanity check also runs validation_step
+                # (and thus sample_rollout) against val_dataloaders.
                 ds = self.trainer.val_dataloaders.dataset
             else:
                 ds = self.trainer.test_dataloaders.dataset
