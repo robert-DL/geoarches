@@ -317,7 +317,7 @@ class XarrayDataset(torch.utils.data.Dataset):
             self.cache.move_to_end(fname)
         else:
             if len(self.cache) > self.max_cache_len:
-                _, self.cache.popitem(last=False)
+                _, evicted_ds = self.cache.popitem(last=False)
                 evicted_ds.close()
 
             self.cache[fname] = xr.open_dataset(self.path / fname, **self.xr_options)
