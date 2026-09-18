@@ -169,7 +169,12 @@ class DiffusionModule(BaseLightningModule):
             sigmas = sigmas[:, None, None, None, None]  # shape (bs,)
 
             # to transform model_output=sample to output=noise - sample
-            out = (noisy_next_state - out).apply(lambda x: x / sigmas)
+            # Use tensordict_apply (not TensorDict's own arithmetic ops) because
+            # noisy_next_state and out can have mismatched inferred batch_size
+            # (e.g. (bs, n_vars) vs (bs,)), which makes TensorDict broadcast the
+            # op into a bogus extra dimension instead of raising -- see
+            # tensordict_cat's docstring for the same underlying quirk.
+            out = tensordict_apply(lambda a, b: (a - b) / sigmas, noisy_next_state, out)
 
         return out
 
@@ -360,10 +365,12 @@ class DiffusionModule(BaseLightningModule):
             )
 
         if self.learn_residual == "default":
-            final_state = batch["state"] + final_state
+            # tensordict_apply, not TensorDict's own "+" -- see the comment on
+            # the sigmas branch above for why raw TensorDict arithmetic is unsafe here.
+            final_state = tensordict_apply(torch.add, batch["state"], final_state)
 
         elif self.learn_residual == "pred":
-            final_state = pred_state + final_state
+            final_state = tensordict_apply(torch.add, pred_state, final_state)
 
         return final_state
 

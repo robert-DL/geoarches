@@ -208,7 +208,7 @@ def main(cfg: DictConfig):
             shuffle=True,
             collate_fn=collate_fn,
             multiprocessing_context="spawn" if cfg.cluster.cpus > 0 else None,
-            persistent_workers=True
+            persistent_workers=cfg.cluster.cpus > 0
         )  # to viz shuffle samples
         train_loader = torch.utils.data.DataLoader(
             trainset,
@@ -217,7 +217,7 @@ def main(cfg: DictConfig):
             shuffle=True,
             collate_fn=collate_fn,
             multiprocessing_context="spawn" if cfg.cluster.cpus > 0 else None,
-            persistent_workers=True
+            persistent_workers=cfg.cluster.cpus > 0
 
         )
         print(f"Train loader: {len(train_loader)} batches")
