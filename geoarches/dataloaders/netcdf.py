@@ -10,6 +10,9 @@ import xarray as xr
 from tensordict.tensordict import TensorDict
 from tqdm import tqdm
 
+from collections import OrderedDict
+
+
 from geoarches.dataloaders import nan_util
 from geoarches.utils.tensordict_utils import tensordict_apply
 
@@ -153,8 +156,10 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         self.id2pt = dict(enumerate(self.timestamps))
 
-        self.cached_xrdataset = None
-        self.cached_fname = None
+        #self.cached_xrdatasets = None
+        #self.cached_fname = None
+        self.cache = OrderedDict()
+        self.max_cache_len = 8
 
         # for backwards comp.
         # TODO(geco): remove
@@ -294,17 +299,31 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         fname, line_id, time = self.id2pt[i]
 
-        if self.cached_fname != fname:
-            if self.cached_xrdataset is not None:
-                self.cached_xrdataset.close()
-            xrdataset = xr.open_dataset(self.path / fname, **self.xr_options)
-            # postprocess some coord names
-            xrdataset = optionally_rename_dimensions(xrdataset)
+        #if self.cached_fname != fname:
+        #    if self.cached_xrdataset is not None:
+        #        self.cached_xrdataset.close()
+        #    xrdataset = xr.open_dataset(self.path / fname, **self.xr_options)
+        #    # postprocess some coord names
+        #    xrdataset = optionally_rename_dimensions(xrdataset)
 
-            self.cached_fname = fname
-            self.cached_xrdataset = xrdataset
+        #    self.cached_fname = fname
+        #    self.cached_xrdataset = xrdataset
+        #
+        # obsi = self.cached_xrdataset.isel(time=line_id)  # pytype: disable=attribute-error
 
-        obsi = self.cached_xrdataset.isel(time=line_id)  # pytype: disable=attribute-error
+
+
+        if fname in self.cache.keys():
+            self.cache.move_to_end(fname)
+        else:
+            if len(self.cache) > self.max_cache_len:
+                _, self.cache.popitem(last=False)
+                evicted_ds.close()
+
+            self.cache[fname] = xr.open_dataset(self.path / fname, **self.xr_options)
+            self.cache[fname] = optionally_rename_dimensions(self.cache[fname])
+
+        obsi = self.cache[fname].isel(time=line_id)
 
         if return_nan_mask:
             tdict_before_interpolation = self.convert_to_tensordict(obsi)
@@ -321,7 +340,8 @@ class XarrayDataset(torch.utils.data.Dataset):
             return tdict, nan_mask
 
         if return_timestamp or self.return_timestamp:
-            timestamp = self.cached_xrdataset["time"][line_id].values.item()
+            #timestamp = self.cached_xrdataset["time"][line_id].values.item()
+            timestamp = self.cache[fname]["time"][line_id].values.item()
             timestamp = torch.tensor(timestamp // 10**9, dtype=torch.int64)
             return tdict, timestamp
 
