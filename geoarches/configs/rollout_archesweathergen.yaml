@@ -1,4 +1,4 @@
-modelpaths: ${oc.env:GEOARCHES}/modelstore/aimip-archesweathergen
+modelpaths: ${oc.env:GEOARCHES}/modelstore/archesW-s2s-2x2-doy-gen-depth2
 rollout_domain: "aimip_rollout"
 # Ensemble size for this generative model: num_members seeded samples of the
 # same model, spread round-robin across the available GPUs (independent of
@@ -6,14 +6,15 @@ rollout_domain: "aimip_rollout"
 num_members: 4
 
 rollout:
-  _target_: geoarches.inference.rollout.ClimateRollout
-  output_path: ${oc.env:GEOARCHES}/data/outputs/climate/aimip-archesweathergen
+  _target_: geoarches.inference.rollout.Forecast
+  output_path: ${oc.env:GEOARCHES}/data/outputs/s2s/archesW-s2s-2x2-doy-gen-depth2
   member_idx: 0
   scale_input_noise: 1.0
   num_steps: 25
+  forecast_steps: 42
 
 rollout_kwargs:
-  start_datestring: "1978-10-01"
-  end_datestring:  "1978-12-31"
+  start_datestring: "2015-01-01"
+  end_datestring:  "2019-12-31"
   freq: "1D"
-  inference_time: True
+  days_of_month: [1, 7, 13, 19, 25]
