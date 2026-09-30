@@ -10,4 +10,4 @@ rollout_kwargs:
   start_datestring: "2015-01-01"
   end_datestring:  "2019-12-31"
   freq: "1D"
-  days_of_month: [1, 7, 13, 19, 25]
+  days_of_month: [3, 5, 9, 11, 15, 17, 21, 23, 27, 29, 31] #[1, 7, 13, 19, 25]
